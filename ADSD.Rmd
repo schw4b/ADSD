@@ -1,0 +1,203 @@
+---
+title: "ADSD"
+author: "Simon Schwab"
+date: "02 May 2017"
+output: html_document
+---
+
+### Install R Markdown 
+```{r Install packages}
+# install.packages("rmarkdown")
+# install.packages("testit")
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load Libraries
+```{r Load libraries, message=FALSE, warning=TRUE}
+library(testit)
+library(reshape2)
+library(ggplot2)
+library(cowplot)
+```
+
+### Main Variables
+```{r Main variables}
+N = 62
+N_ROIS = 14
+PATH_HOME = "/home/simon"
+PATH_ROIS = file.path(PATH_HOME, 'Drive', '14RoisN62') 
+PATH = file.path(PATH_HOME, 'Data', 'ADSD')
+```
+
+## Subject infos
+```{r Subjects infos}
+infos = read.table(file.path(PATH, 'infos.txt'), header = T)
+rois = read.table(file.path(PATH, 'ROIs.txt'), header = T)
+# Excluded subjects
+infos$included = rep(TRUE,N)
+infos$included[match("ADSD_13", infos$id)] = FALSE
+infos$included[match("ADSD_34", infos$id)] = FALSE
+infos$included[match("ADSD_44", infos$id)] = FALSE
+infos$included[match("ADSD_49", infos$id)] = FALSE
+infos$included[match("ADSD_51", infos$id)] = FALSE
+infos$included[match("2026", infos$id)] = FALSE # no mri data
+
+infos$isHC = as.logical(infos$isHC)
+infos$isAD = as.logical(infos$isAD)
+infos$isSD = as.logical(infos$isSD)
+
+assert(nrow(infos) == N)
+N_SD  = sum(infos$isSD)
+N_AD  = sum(infos$isAD)
+N_HC  = sum(infos$isHC)
+assert(N_SD + N_AD + N_HC == N)
+
+print(infos)
+```
+
+### Load time series of 14 Rois
+```{r Load time series of 14 Rois}
+# first stockholm sample, then china sample
+f1 = list.files(path = PATH_ROIS, pattern = "^ADSD.*.txt")
+f2 = list.files(path = PATH_ROIS, pattern = "^20.*.txt")
+f = c(f1,f2)
+rm(f1); rm(f2)
+
+assert(length(f) == N)
+
+R = array(NA, dim=c(N_ROIS, N_ROIS, N))
+for (s in 1:N) {
+  d = read.table(file.path(PATH_ROIS, f[s]), header = F)
+  R[,,s] = cor(d)
+}
+# ADSD_13 has no time series from ROI 11 and ROI 12
+```
+
+### Fisher z-transformation and one-way ANOVA across groups
+```{r Fisher z-transformation and one-way ANOVA across groups}
+Z = 0.5*(log(1+R) - log(1-R))
+
+group = rep(0,N)
+group[infos$isAD] = 'AD'
+group[infos$isSD] = 'SD'
+group[infos$isHC] = 'HC'
+group = as.factor(group)
+
+Fvals = array(0, dim=c(N_ROIS, N_ROIS))
+Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
+
+for (i in 1:N_ROIS) {
+  for (j in 1:N_ROIS) {
+    if (i != j ) {
+      y = Z[i,j,]
+      result = summary(aov(y ~ group))
+      result = result[[1]]
+      Fvals[i,j] = result$`F value`[1]
+      Pvals[i,j] = result$`Pr(>F)`[1]
+    }
+  }
+}
+
+Fvals_05 = Fvals
+Fvals_05[Pvals > 0.05] = 0
+
+Pvals_FDR05 = array(p.adjust(Pvals, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+Fvals_FDR05 = Fvals
+Fvals_FDR05[Pvals_FDR05 > 0.05] = 0
+
+Fvals = Fvals * lower.tri(Fvals)
+Fvals_05 = Fvals_05 * lower.tri(Fvals_05)
+Fvals_FDR05 = Fvals_FDR05 * lower.tri(Fvals_FDR05)
+
+```
+
+```{r Mean correlation per group}
+meanRSD = apply(R[,,infos$isSD & infos$included], c(1,2), mean)
+meanRAD = apply(R[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+meanRHC = apply(R[,,infos$isHC & infos$included], c(1,2), mean)
+
+meanRSD = meanRSD*lower.tri(meanRSD)
+meanRAD = meanRAD*lower.tri(meanRAD)
+meanRHC = meanRHC*lower.tri(meanRHC)
+
+limR = c(0, 0.7)
+limF = c(0, 11)
+
+meanRSD_ = melt(meanRSD)
+meanRAD_ = melt(meanRAD)
+meanRHC_ = melt(meanRHC)
+```
+
+```{r Plots, fig.height=4.5, fig.width=9}
+p1 = ggplot(meanRSD_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("SD")
+
+p2 = ggplot(meanRAD_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("AD")
+
+p3 = ggplot(meanRHC_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("HC")
+
+p4 = ggplot(melt(Fvals), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
+                       midpoint = 0, limit = limF, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("F values")
+
+p5 = ggplot(melt(Fvals_05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
+                       midpoint = 0, limit = limF, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("F values (p<.05 uncor.)")
+
+p6 = ggplot(melt(Fvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
+                       midpoint = 0, limit = limF, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("F values (FDR .05)")
+
+plot_grid(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2, rel_widths = c(1, 1))
+```
+```{r ROI labels}
+print(rois)
+
+```
+
+
+
