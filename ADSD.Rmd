@@ -5,25 +5,27 @@ date: "02 May 2017"
 output: html_document
 ---
 
-### Install R Markdown 
+## Install R Markdown 
 ```{r Install packages}
 # install.packages("rmarkdown")
 # install.packages("testit")
+# install.packages("Hmisc")
 ```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-### Load Libraries
+## Load Libraries
 ```{r Load libraries, message=FALSE, warning=TRUE}
 library(testit)
 library(reshape2)
 library(ggplot2)
 library(cowplot)
+library(Hmisc)
 ```
 
-### Main Variables
+## Main Variables
 ```{r Main variables}
 N = 62
 N_ROIS = 14
@@ -58,8 +60,8 @@ assert(N_SD + N_AD + N_HC == N)
 print(infos)
 ```
 
-### Load time series of 14 Rois
-```{r Load time series of 14 Rois}
+## Load time series of 14 Rois
+```{r Load time series of 14 Rois, warning=FALSE}
 # first stockholm sample, then china sample
 f1 = list.files(path = PATH_ROIS, pattern = "^ADSD.*.txt")
 f2 = list.files(path = PATH_ROIS, pattern = "^20.*.txt")
@@ -69,14 +71,18 @@ rm(f1); rm(f2)
 assert(length(f) == N)
 
 R = array(NA, dim=c(N_ROIS, N_ROIS, N))
+P = array(NA, dim=c(N_ROIS, N_ROIS, N))
 for (s in 1:N) {
   d = read.table(file.path(PATH_ROIS, f[s]), header = F)
-  R[,,s] = cor(d)
+  # R[,,s] = cor(d)
+  tmp =  rcorr(as.matrix(d), type="pearson")
+  R[,,s] = tmp$r
+  P[,,s] = tmp$P
 }
 # ADSD_13 has no time series from ROI 11 and ROI 12
 ```
 
-### Fisher z-transformation and one-way ANOVA across groups
+## Fisher z-transformation and one-way ANOVA across groups
 ```{r Fisher z-transformation and one-way ANOVA across groups}
 Z = 0.5*(log(1+R) - log(1-R))
 
@@ -88,7 +94,6 @@ group = as.factor(group)
 
 Fvals = array(0, dim=c(N_ROIS, N_ROIS))
 Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
-
 for (i in 1:N_ROIS) {
   for (j in 1:N_ROIS) {
     if (i != j ) {
@@ -101,38 +106,70 @@ for (i in 1:N_ROIS) {
   }
 }
 
-Fvals_05 = Fvals
-Fvals_05[Pvals > 0.05] = 0
+# lower diagnoal
+tri = lower.tri(Fvals)
 
-Pvals_FDR05 = array(p.adjust(Pvals, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-Fvals_FDR05 = Fvals
-Fvals_FDR05[Pvals_FDR05 > 0.05] = 0
+# uncorrected
+Fvals_01 = Fvals
+Fvals_01[Pvals > 0.01] = 0
 
-Fvals = Fvals * lower.tri(Fvals)
-Fvals_05 = Fvals_05 * lower.tri(Fvals_05)
-Fvals_FDR05 = Fvals_FDR05 * lower.tri(Fvals_FDR05)
+# reorder ROIS, first left (uneven) then right (even) rois
+idx=c(seq(1,N_ROIS,2), seq(2,N_ROIS,2))
 
+# FDR
+Pvals_ = Pvals[idx,idx]
+Pvals_[!tri] = NA
+Pvals_FDR05 = array(p.adjust(Pvals_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+Fvals_FDR05 = Fvals[idx,idx]
+Fvals_FDR05[Pvals_FDR05 > 0.05 | is.na(Pvals_FDR05)] = 0
 ```
 
+## Mean correlation per group
 ```{r Mean correlation per group}
+# Correlation R
 meanRSD = apply(R[,,infos$isSD & infos$included], c(1,2), mean)
 meanRAD = apply(R[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
 meanRHC = apply(R[,,infos$isHC & infos$included], c(1,2), mean)
 
-meanRSD = meanRSD*lower.tri(meanRSD)
-meanRAD = meanRAD*lower.tri(meanRAD)
-meanRHC = meanRHC*lower.tri(meanRHC)
+# P values
+meanPSD = apply(P[,,infos$isSD & infos$included], c(1,2), mean)
+meanPAD = apply(P[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+meanPHC = apply(P[,,infos$isHC & infos$included], c(1,2), mean)
 
+# p = 0.01 uncorrected
+meanRSD_01 = meanRSD
+meanRSD_01[meanPSD > 0.01] = 0
+meanRAD_01 = meanRAD
+meanRAD_01[meanPAD > 0.01] = 0
+meanRHC_01 = meanRHC
+meanRHC_01[meanPHC > 0.01] = 0
+
+# FDR 0.05
+meanPSD_ = meanPSD[idx,idx]
+meanPSD_[!tri] = NA
+meanPSD_FDR05 = array(p.adjust(meanPSD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+meanRSD_FDR05 = meanRSD[idx,idx]
+meanRSD_FDR05[meanPSD_FDR05 > 0.05 | is.na(meanPSD_FDR05)] = 0
+
+meanPAD_ = meanPAD[idx,idx]
+meanPAD_[!tri] = NA
+meanPAD_FDR05 = array(p.adjust(meanPAD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+meanRAD_FDR05 = meanRAD[idx,idx]
+meanRAD_FDR05[meanPAD_FDR05 > 0.05 | is.na(meanPAD_FDR05)] = 0
+
+meanPHC_ = meanPHC[idx,idx]
+meanPHC_[!tri] = NA
+meanPHC_FDR05 = array(p.adjust(meanPHC_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+meanRHC_FDR05 = meanRHC[idx,idx]
+meanRHC_FDR05[meanPHC_FDR05 > 0.05 | is.na(meanPHC_FDR05)] = 0
+```
+
+## Correlation plots
+```{r Correlation plots, fig.height=4.5, fig.width=9}
 limR = c(0, 0.7)
 limF = c(0, 11)
 
-meanRSD_ = melt(meanRSD)
-meanRAD_ = melt(meanRAD)
-meanRHC_ = melt(meanRHC)
-```
-
-```{r Plots, fig.height=4.5, fig.width=9}
-p1 = ggplot(meanRSD_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p1 = ggplot(melt(meanRSD[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -142,7 +179,7 @@ p1 = ggplot(meanRSD_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("SD")
 
-p2 = ggplot(meanRAD_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p2 = ggplot(melt(meanRAD[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -152,7 +189,7 @@ p2 = ggplot(meanRAD_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("AD")
 
-p3 = ggplot(meanRHC_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p3 = ggplot(melt(meanRHC[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -162,40 +199,79 @@ p3 = ggplot(meanRHC_, aes_string(x = "Var1", y = "Var2", fill = "value")) +
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("HC")
 
-p4 = ggplot(melt(Fvals), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p4 = ggplot(melt(meanRSD_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p5 = ggplot(melt(meanRAD_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p6 = ggplot(melt(meanRHC_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+plot_grid(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2, rel_widths = c(1, 1))
+```
+
+## Difference between groups
+Null hypothesis is AD = SD = HC.
+```{r Difference between groups, fig.height=2.3, fig.width=9}
+p1 = ggplot(melt(Fvals[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
-                       midpoint = 0, limit = limF, space = "Lab", name = "R") +
+                       midpoint = 0, limit = limF, space = "Lab", name = "F") +
   theme(axis.ticks = element_blank(), axis.line = element_blank(),
         text = element_text(size=12), plot.title = element_text(size=12),
         axis.text.x = element_text(size=12,angle=0),
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("F values")
 
-p5 = ggplot(melt(Fvals_05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p2 = ggplot(melt(Fvals_01[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
-                       midpoint = 0, limit = limF, space = "Lab", name = "R") +
+                       midpoint = 0, limit = limF, space = "Lab", name = "F") +
   theme(axis.ticks = element_blank(), axis.line = element_blank(),
         text = element_text(size=12), plot.title = element_text(size=12),
         axis.text.x = element_text(size=12,angle=0),
         axis.text.y = element_text(size=12)) + 
-  scale_y_reverse() + ggtitle("F values (p<.05 uncor.)")
+  scale_y_reverse() + ggtitle("p < .01 uncor.")
 
-p6 = ggplot(melt(Fvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p3 = ggplot(melt(Fvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
-                       midpoint = 0, limit = limF, space = "Lab", name = "R") +
+                       midpoint = 0, limit = limF, space = "Lab", name = "F") +
   theme(axis.ticks = element_blank(), axis.line = element_blank(),
         text = element_text(size=12), plot.title = element_text(size=12),
         axis.text.x = element_text(size=12,angle=0),
         axis.text.y = element_text(size=12)) + 
-  scale_y_reverse() + ggtitle("F values (FDR .05)")
+  scale_y_reverse() + ggtitle("FDR .05")
 
-plot_grid(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2, rel_widths = c(1, 1))
+plot_grid(p1, p2, p3, ncol = 3, nrow = 1, rel_widths = c(1, 1))
 ```
+
+## ROI labels
+Ordering from top to bottom corresponds to plots and figures. Nr indicates atlas label.
 ```{r ROI labels}
-print(rois)
+print(rois[idx,])
 
 ```
 
