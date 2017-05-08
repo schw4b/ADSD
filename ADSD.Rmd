@@ -83,6 +83,7 @@ for (s in 1:N) {
 ```
 
 ## Fisher z-transformation and one-way ANOVA across groups
+Null hypothesis is AD = SD = HC.
 ```{r Fisher z-transformation and one-way ANOVA across groups}
 Z = 0.5*(log(1+R) - log(1-R))
 
@@ -98,7 +99,7 @@ for (i in 1:N_ROIS) {
   for (j in 1:N_ROIS) {
     if (i != j ) {
       y = Z[i,j,]
-      result = summary(aov(y ~ group))
+      result = summary(aov(y[infos$included] ~ group[infos$included]))
       result = result[[1]]
       Fvals[i,j] = result$`F value`[1]
       Pvals[i,j] = result$`Pr(>F)`[1]
@@ -114,13 +115,13 @@ Fvals_01 = Fvals
 Fvals_01[Pvals > 0.01] = 0
 
 # reorder ROIS, first left (uneven) then right (even) rois
-idx=c(seq(1,N_ROIS,2), seq(2,N_ROIS,2))
+reidx=c(seq(1,N_ROIS,2), seq(2,N_ROIS,2))
 
 # FDR
-Pvals_ = Pvals[idx,idx]
+Pvals_ = Pvals[reidx,reidx]
 Pvals_[!tri] = NA
 Pvals_FDR05 = array(p.adjust(Pvals_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-Fvals_FDR05 = Fvals[idx,idx]
+Fvals_FDR05 = Fvals[reidx,reidx]
 Fvals_FDR05[Pvals_FDR05 > 0.05 | is.na(Pvals_FDR05)] = 0
 ```
 
@@ -145,22 +146,22 @@ meanRHC_01 = meanRHC
 meanRHC_01[meanPHC > 0.01] = 0
 
 # FDR 0.05
-meanPSD_ = meanPSD[idx,idx]
+meanPSD_ = meanPSD[reidx,reidx]
 meanPSD_[!tri] = NA
 meanPSD_FDR05 = array(p.adjust(meanPSD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-meanRSD_FDR05 = meanRSD[idx,idx]
+meanRSD_FDR05 = meanRSD[reidx,reidx]
 meanRSD_FDR05[meanPSD_FDR05 > 0.05 | is.na(meanPSD_FDR05)] = 0
 
-meanPAD_ = meanPAD[idx,idx]
+meanPAD_ = meanPAD[reidx,reidx]
 meanPAD_[!tri] = NA
 meanPAD_FDR05 = array(p.adjust(meanPAD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-meanRAD_FDR05 = meanRAD[idx,idx]
+meanRAD_FDR05 = meanRAD[reidx,reidx]
 meanRAD_FDR05[meanPAD_FDR05 > 0.05 | is.na(meanPAD_FDR05)] = 0
 
-meanPHC_ = meanPHC[idx,idx]
+meanPHC_ = meanPHC[reidx,reidx]
 meanPHC_[!tri] = NA
 meanPHC_FDR05 = array(p.adjust(meanPHC_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-meanRHC_FDR05 = meanRHC[idx,idx]
+meanRHC_FDR05 = meanRHC[reidx,reidx]
 meanRHC_FDR05[meanPHC_FDR05 > 0.05 | is.na(meanPHC_FDR05)] = 0
 ```
 
@@ -169,7 +170,7 @@ meanRHC_FDR05[meanPHC_FDR05 > 0.05 | is.na(meanPHC_FDR05)] = 0
 limR = c(0, 0.7)
 limF = c(0, 11)
 
-p1 = ggplot(melt(meanRSD[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p1 = ggplot(melt(meanRSD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -179,7 +180,7 @@ p1 = ggplot(melt(meanRSD[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill 
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("SD")
 
-p2 = ggplot(melt(meanRAD[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p2 = ggplot(melt(meanRAD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -189,7 +190,7 @@ p2 = ggplot(melt(meanRAD[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill 
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("AD")
 
-p3 = ggplot(melt(meanRHC[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p3 = ggplot(melt(meanRHC[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -233,9 +234,8 @@ plot_grid(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2, rel_widths = c(1, 1))
 ```
 
 ## Difference between groups
-Null hypothesis is AD = SD = HC.
 ```{r Difference between groups, fig.height=2.3, fig.width=9}
-p1 = ggplot(melt(Fvals[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p1 = ggplot(melt(Fvals[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
                        midpoint = 0, limit = limF, space = "Lab", name = "F") +
@@ -245,7 +245,7 @@ p1 = ggplot(melt(Fvals[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = 
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("F values")
 
-p2 = ggplot(melt(Fvals_01[idx,idx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p2 = ggplot(melt(Fvals_01[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
                        midpoint = 0, limit = limF, space = "Lab", name = "F") +
@@ -266,14 +266,40 @@ p3 = ggplot(melt(Fvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value"
   scale_y_reverse() + ggtitle("FDR .05")
 
 plot_grid(p1, p2, p3, ncol = 3, nrow = 1, rel_widths = c(1, 1))
+
+```
+
+Label position with sign. group difference.
+```{r Position of labels}
+which(t(Fvals_FDR05) > 0, arr.ind = T)
 ```
 
 ## ROI labels
-Ordering from top to bottom corresponds to plots and figures. Nr indicates atlas label.
-```{r ROI labels}
-print(rois[idx,])
+Time series are extracted using the k=200 Craddock atlas with a selection of ROIS most prominently overlapping with tempral AAL regions. `AAL_Nr` indicates atlas label, `position` indicates position in matrices from figures and plots. In these, first uneven (left), then even (right) regions are shown.
 
+```{r ROI labels}
+rois$position = c(t(array(c(1:N_ROIS), dim=c(7,2))))
+print(rois)
 ```
 
+## Group difference
+```{r Group difference, fig.height=2.3, fig.width=5}
+d = data.frame(R = R[3,1,], Z = Z[3,1,], group=group)
+d = subset(d, infos$included)
+
+p1 = ggplot(d, aes(x=group, y=R)) + geom_violin() + geom_boxplot(width=0.2) +
+  geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002)) + 
+  ggtitle("Pearson's R")
+
+p2 = ggplot(d, aes(x=group, y=Z)) + geom_violin() + geom_boxplot(width=0.2) +
+  geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002)) + 
+  ggtitle("Fisher's Z")
+
+plot_grid(p1, p2, ncol = 2, nrow = 1, rel_widths = c(1, 1))
+
+summary(aov(R ~ group, data=d))
+summary(aov(Z ~ group, data=d))
+
+```
 
 
