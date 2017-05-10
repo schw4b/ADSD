@@ -40,11 +40,16 @@ infos = read.table(file.path(PATH, 'infos.txt'), header = T)
 rois = read.table(file.path(PATH, 'ROIs.txt'), header = T)
 # Excluded subjects
 infos$included = rep(TRUE,N)
+# DVARS; more than 20% volumes affected:
 infos$included[match("ADSD_13", infos$id)] = FALSE
+infos$included[match("ADSD_36", infos$id)] = FALSE
+# High E-vars:
 infos$included[match("ADSD_34", infos$id)] = FALSE
-infos$included[match("ADSD_44", infos$id)] = FALSE
-infos$included[match("ADSD_49", infos$id)] = FALSE
-infos$included[match("ADSD_51", infos$id)] = FALSE
+# DVARS below 40%:
+infos$included[match("ADSD_15", infos$id)] = FALSE
+infos$included[match("ADSD_42", infos$id)] = FALSE
+infos$included[match("ADSD_43", infos$id)] = FALSE
+
 infos$included[match("2026", infos$id)] = FALSE # no mri data
 
 infos$isHC = as.logical(infos$isHC)
@@ -59,6 +64,21 @@ assert(N_SD + N_AD + N_HC == N)
 
 print(infos)
 ```
+## DVARS analysis
+```{r DVARS analysis}
+a = read.table(file.path(PATH, 'DVARS_vols_affected.txt'), header = F)
+b = cbind(rep(0,N), a[,1:ncol(a)-1])
+affected = a | b
+
+# which subjetc have more than 20% of their volumes affected?
+print(as.character(infos$id[rowSums(affected) > infos$N_vols*0.2]))
+```
+DVARS diagnostics
+
+```{r DVARS diagnostics}
+dvars=read.table(file.path(PATH, 'DVARS.txt'), header = T)
+```
+
 
 ## Load time series of 14 Rois
 ```{r Load time series of 14 Rois, warning=FALSE}
@@ -67,7 +87,6 @@ f1 = list.files(path = PATH_ROIS, pattern = "^ADSD.*.txt")
 f2 = list.files(path = PATH_ROIS, pattern = "^20.*.txt")
 f = c(f1,f2)
 rm(f1); rm(f2)
-
 assert(length(f) == N)
 
 R = array(NA, dim=c(N_ROIS, N_ROIS, N))
@@ -75,7 +94,9 @@ P = array(NA, dim=c(N_ROIS, N_ROIS, N))
 for (s in 1:N) {
   d = read.table(file.path(PATH_ROIS, f[s]), header = F)
   # R[,,s] = cor(d)
-  tmp =  rcorr(as.matrix(d), type="pearson")
+  idx = !affected[s,][1:infos$N_vols[s]] # excluding affected scans
+  tmp =  rcorr(as.matrix(d[idx,]), type="pearson")
+  
   R[,,s] = tmp$r
   P[,,s] = tmp$P
 }
