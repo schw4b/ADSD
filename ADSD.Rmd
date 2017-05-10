@@ -79,7 +79,6 @@ DVARS diagnostics
 dvars=read.table(file.path(PATH, 'DVARS.txt'), header = T)
 ```
 
-
 ## Load time series of 14 Rois
 ```{r Load time series of 14 Rois, warning=FALSE}
 # first stockholm sample, then china sample
@@ -290,17 +289,21 @@ plot_grid(p1, p2, p3, ncol = 3, nrow = 1, rel_widths = c(1, 1))
 
 ```
 
-Label position with sign. group difference.
-```{r Position of labels}
-which(t(Fvals_FDR05) > 0, arr.ind = T)
-```
-
 ## ROI labels
 Time series are extracted using the k=200 Craddock atlas with a selection of ROIS most prominently overlapping with tempral AAL regions. `AAL_Nr` indicates atlas label, `position` indicates position in matrices from figures and plots. In these, first uneven (left), then even (right) regions are shown.
 
 ```{r ROI labels}
 rois$position = c(t(array(c(1:N_ROIS), dim=c(7,2))))
 print(rois)
+```
+
+### Significant FC
+Label position with sign. group difference.
+```{r Position of labels}
+idx = which(t(Fvals_FDR05) > 0, arr.ind = T)
+cbind(as.character(rois$AAL_Name[match(idx[,1], rois$position)]),
+      as.character(rois$AAL_Name[match(idx[,2], rois$position)]))
+
 ```
 
 ## Group difference
