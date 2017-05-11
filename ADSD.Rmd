@@ -1,7 +1,7 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "02 May 2017"
+date: "10 May 2017"
 output: html_document
 ---
 
@@ -64,6 +64,14 @@ assert(N_SD + N_AD + N_HC == N)
 
 print(infos)
 ```
+## ROI labels
+Time series are extracted using the k=200 Craddock atlas with a selection of ROIS most prominently overlapping with tempral AAL regions. `AAL_Nr` indicates atlas label, `position` indicates position in matrices from figures and plots. In these, first uneven (left), then even (right) regions are shown.
+
+```{r ROI labels}
+rois$position = c(t(array(c(1:N_ROIS), dim=c(7,2))))
+print(rois)
+```
+
 ## DVARS analysis
 ```{r DVARS analysis}
 a = read.table(file.path(PATH, 'DVARS_vols_affected.txt'), header = F)
@@ -102,10 +110,14 @@ for (s in 1:N) {
 # ADSD_13 has no time series from ROI 11 and ROI 12
 ```
 
-## Fisher z-transformation and one-way ANOVA across groups
+## Fisher z-transformation
 Null hypothesis is AD = SD = HC.
 ```{r Fisher z-transformation and one-way ANOVA across groups}
 Z = 0.5*(log(1+R) - log(1-R))
+```
+
+## One-way ANOVA across groups
+```{r One-way ANOVA across groups}
 
 group = rep(0,N)
 group[infos$isAD] = 'AD'
@@ -127,7 +139,7 @@ for (i in 1:N_ROIS) {
   }
 }
 
-# lower diagnoal
+# lower diagonal
 tri = lower.tri(Fvals)
 
 # uncorrected
@@ -167,28 +179,36 @@ meanRHC_01[meanPHC > 0.01] = 0
 
 # FDR 0.05
 meanPSD_ = meanPSD[reidx,reidx]
-meanPSD_[!tri] = NA
-meanPSD_FDR05 = array(p.adjust(meanPSD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-meanRSD_FDR05 = meanRSD[reidx,reidx]
-meanRSD_FDR05[meanPSD_FDR05 > 0.05 | is.na(meanPSD_FDR05)] = 0
-
 meanPAD_ = meanPAD[reidx,reidx]
-meanPAD_[!tri] = NA
-meanPAD_FDR05 = array(p.adjust(meanPAD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-meanRAD_FDR05 = meanRAD[reidx,reidx]
-meanRAD_FDR05[meanPAD_FDR05 > 0.05 | is.na(meanPAD_FDR05)] = 0
-
 meanPHC_ = meanPHC[reidx,reidx]
-meanPHC_[!tri] = NA
-meanPHC_FDR05 = array(p.adjust(meanPHC_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+
+meanRSD_FDR05 = meanRSD[reidx,reidx]
+meanRAD_FDR05 = meanRAD[reidx,reidx]
 meanRHC_FDR05 = meanRHC[reidx,reidx]
+
+meanPSD_[!tri] = NA
+meanPAD_[!tri] = NA
+meanPHC_[!tri] = NA
+
+#meanPSD_FDR05 = array(p.adjust(meanPSD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+#meanPAD_FDR05 = array(p.adjust(meanPAD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+#meanPHC_FDR05 = array(p.adjust(meanPHC_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+
+# Global FDR across groups
+M = array(p.adjust(rbind(meanPSD_, meanPAD_, meanPHC_), method = "fdr"), 
+          dim=c(3*N_ROIS, N_ROIS))
+meanPSD_FDR05 = M[1:14,]
+meanPAD_FDR05 = M[15:28,]
+meanPHC_FDR05 = M[29:42,]
+
+meanRSD_FDR05[meanPSD_FDR05 > 0.05 | is.na(meanPSD_FDR05)] = 0
+meanRAD_FDR05[meanPAD_FDR05 > 0.05 | is.na(meanPAD_FDR05)] = 0
 meanRHC_FDR05[meanPHC_FDR05 > 0.05 | is.na(meanPHC_FDR05)] = 0
 ```
 
 ## Correlation plots
 ```{r Correlation plots, fig.height=4.5, fig.width=9}
 limR = c(0, 0.7)
-limF = c(0, 11)
 
 p1 = ggplot(melt(meanRSD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
@@ -255,6 +275,8 @@ plot_grid(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2, rel_widths = c(1, 1))
 
 ## Difference between groups
 ```{r Difference between groups, fig.height=2.3, fig.width=9}
+limF = c(0, 12)
+
 p1 = ggplot(melt(Fvals[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "blue",
@@ -287,14 +309,6 @@ p3 = ggplot(melt(Fvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value"
 
 plot_grid(p1, p2, p3, ncol = 3, nrow = 1, rel_widths = c(1, 1))
 
-```
-
-## ROI labels
-Time series are extracted using the k=200 Craddock atlas with a selection of ROIS most prominently overlapping with tempral AAL regions. `AAL_Nr` indicates atlas label, `position` indicates position in matrices from figures and plots. In these, first uneven (left), then even (right) regions are shown.
-
-```{r ROI labels}
-rois$position = c(t(array(c(1:N_ROIS), dim=c(7,2))))
-print(rois)
 ```
 
 ### Significant FC
