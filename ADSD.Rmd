@@ -56,6 +56,12 @@ infos$isHC = as.logical(infos$isHC)
 infos$isAD = as.logical(infos$isAD)
 infos$isSD = as.logical(infos$isSD)
 
+infos$group=rep(NA,N)
+infos$group[infos$isSD] = 'SD'
+infos$group[infos$isAD] = 'AD'
+infos$group[infos$isHC] = 'HC'
+infos$group = as.factor(infos$group)
+
 assert(nrow(infos) == N)
 N_SD  = sum(infos$isSD)
 N_AD  = sum(infos$isAD)
@@ -64,12 +70,35 @@ assert(N_SD + N_AD + N_HC == N)
 
 print(infos)
 ```
+## Demographics
+```{r Demographics}
+d.demog = data.frame(Group=as.factor(c('SD', 'AD', 'HC')),
+                     N_Total=c(sum(infos$isSD), sum(infos$isAD), sum(infos$isHC)),
+                     N_included=c(sum(infos$isSD & infos$included), sum(infos$isAD & infos$included),
+                                  sum(infos$isHC & infos$included)),
+                     age_mean=round(c(mean(infos$age[infos$isSD & infos$included]),
+                                 mean(infos$age[infos$isAD & infos$included]),
+                                 mean(infos$age[infos$isHC & infos$included]))),
+                     age_sd=round(c(sd(infos$age[infos$isSD & infos$included]),
+                                    sd(infos$age[infos$isAD & infos$included]),
+                                    sd(infos$age[infos$isHC & infos$included])))
+)
+
+print(d.demog)
+```
+
 ## ROI labels
 Time series are extracted using the k=200 Craddock atlas with a selection of ROIS most prominently overlapping with tempral AAL regions. `AAL_Nr` indicates atlas label, `position` indicates position in matrices from figures and plots. In these, first uneven (left), then even (right) regions are shown.
 
 ```{r ROI labels}
 rois$position = c(t(array(c(1:N_ROIS), dim=c(7,2))))
 print(rois)
+
+# reorder ROIS, first left (uneven) then right (even) rois
+reidx=c(seq(1,N_ROIS,2), seq(2,N_ROIS,2))
+
+# lower diagonal
+tri = lower.tri(array(0, dim=c(N_ROIS, N_ROIS)))
 ```
 
 ## DVARS analysis
@@ -110,52 +139,6 @@ for (s in 1:N) {
 # ADSD_13 has no time series from ROI 11 and ROI 12
 ```
 
-## Fisher z-transformation
-Null hypothesis is AD = SD = HC.
-```{r Fisher z-transformation and one-way ANOVA across groups}
-Z = 0.5*(log(1+R) - log(1-R))
-```
-
-## One-way ANOVA across groups
-```{r One-way ANOVA across groups}
-
-group = rep(0,N)
-group[infos$isAD] = 'AD'
-group[infos$isSD] = 'SD'
-group[infos$isHC] = 'HC'
-group = as.factor(group)
-
-Fvals = array(0, dim=c(N_ROIS, N_ROIS))
-Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
-for (i in 1:N_ROIS) {
-  for (j in 1:N_ROIS) {
-    if (i != j ) {
-      y = Z[i,j,]
-      result = summary(aov(y[infos$included] ~ group[infos$included]))
-      result = result[[1]]
-      Fvals[i,j] = result$`F value`[1]
-      Pvals[i,j] = result$`Pr(>F)`[1]
-    }
-  }
-}
-
-# lower diagonal
-tri = lower.tri(Fvals)
-
-# uncorrected
-Fvals_01 = Fvals
-Fvals_01[Pvals > 0.01] = 0
-
-# reorder ROIS, first left (uneven) then right (even) rois
-reidx=c(seq(1,N_ROIS,2), seq(2,N_ROIS,2))
-
-# FDR
-Pvals_ = Pvals[reidx,reidx]
-Pvals_[!tri] = NA
-Pvals_FDR05 = array(p.adjust(Pvals_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-Fvals_FDR05 = Fvals[reidx,reidx]
-Fvals_FDR05[Pvals_FDR05 > 0.05 | is.na(Pvals_FDR05)] = 0
-```
 
 ## Mean correlation per group
 ```{r Mean correlation per group}
@@ -206,8 +189,8 @@ meanRAD_FDR05[meanPAD_FDR05 > 0.05 | is.na(meanPAD_FDR05)] = 0
 meanRHC_FDR05[meanPHC_FDR05 > 0.05 | is.na(meanPHC_FDR05)] = 0
 ```
 
-## Correlation plots
-```{r Correlation plots, fig.height=4.5, fig.width=9}
+## Plot: FC
+```{r Plot: FC, fig.height=4.5, fig.width=9}
 limR = c(0, 0.7)
 
 p1 = ggplot(melt(meanRSD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
@@ -273,8 +256,43 @@ p6 = ggplot(melt(meanRHC_FDR05), aes_string(x = "Var1", y = "Var2", fill = "valu
 plot_grid(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2, rel_widths = c(1, 1))
 ```
 
-## Difference between groups
-```{r Difference between groups, fig.height=2.3, fig.width=9}
+## Fisher z-transformation
+```{r Fisher z-transformation and one-way ANOVA across groups}
+Z = 0.5*(log(1+R) - log(1-R))
+```
+
+
+## One-way ANOVA across groups
+Null hypothesis is AD = SD = HC.
+```{r One-way ANOVA across groups}
+Fvals = array(0, dim=c(N_ROIS, N_ROIS))
+Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
+for (i in 1:N_ROIS) {
+  for (j in 1:N_ROIS) {
+    if (i != j ) {
+      y = Z[i,j,]
+      result = summary(aov(y[infos$included] ~ infos$group[infos$included]))
+      result = result[[1]]
+      Fvals[i,j] = result$`F value`[1]
+      Pvals[i,j] = result$`Pr(>F)`[1]
+    }
+  }
+}
+
+# uncorrected
+Fvals_01 = Fvals
+Fvals_01[Pvals > 0.01] = 0
+
+# FDR
+Pvals_ = Pvals[reidx,reidx]
+Pvals_[!tri] = NA
+Pvals_FDR05 = array(p.adjust(Pvals_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+Fvals_FDR05 = Fvals[reidx,reidx]
+Fvals_FDR05[Pvals_FDR05 > 0.05 | is.na(Pvals_FDR05)] = 0
+```
+
+## Plot: Difference between groups
+```{r Plot: Difference between groups, fig.height=2.3, fig.width=9}
 limF = c(0, 12)
 
 p1 = ggplot(melt(Fvals[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
@@ -310,19 +328,128 @@ p3 = ggplot(melt(Fvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value"
 plot_grid(p1, p2, p3, ncol = 3, nrow = 1, rel_widths = c(1, 1))
 
 ```
-
-### Significant FC
-Label position with sign. group difference.
-```{r Position of labels}
+## Significant edges from ANOVA
+```{r Significant edges from ANOVA}
 idx = which(t(Fvals_FDR05) > 0, arr.ind = T)
 cbind(as.character(rois$AAL_Name[match(idx[,1], rois$position)]),
       as.character(rois$AAL_Name[match(idx[,2], rois$position)]))
-
 ```
+
+## t-test SD vs HC
+```{r t-test SD vs HC}
+HCvsSD=list()
+HCvsAD=list()
+
+HCvsSD$Tvals = array(0, dim=c(N_ROIS, N_ROIS))
+HCvsSD$Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
+
+HCvsAD$Tvals = array(0, dim=c(N_ROIS, N_ROIS))
+HCvsAD$Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
+
+for (i in 1:N_ROIS) {
+  for (j in 1:N_ROIS) {
+    if (i != j ) {
+      
+      y = Z[i,j,]
+      
+      idx = (infos$isSD | infos$isHC) & infos$included
+      result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
+                      alternative = "greater")
+      HCvsSD$Tvals[i,j] = result[[1]]
+      HCvsSD$Pvals[i,j] = result[[3]]
+      
+      idx = (infos$isAD | infos$isHC) & infos$included
+      result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
+                      alternative = "less")
+      HCvsAD$Tvals[i,j] = -result[[1]]
+      HCvsAD$Pvals[i,j] = result[[3]]
+    }
+  }
+}
+
+# FDR correction
+a = HCvsSD$Pvals[reidx,reidx]
+b = HCvsAD$Pvals[reidx,reidx]
+a[!tri] = NA
+b[!tri] = NA
+
+M = array(p.adjust(rbind(a,b), method = "fdr"), dim=c(2*N_ROIS, N_ROIS))
+HCvsSD$Pvals_FDR05 = M[1:14,]
+HCvsAD$Pvals_FDR05 = M[15:28,]
+
+HCvsSD$Tvals_FDR05 = HCvsSD$Tvals[reidx,reidx]
+HCvsAD$Tvals_FDR05 = HCvsAD$Tvals[reidx,reidx]
+
+HCvsSD$Tvals_FDR05[HCvsSD$Pvals_FDR05 > 0.05 | is.na(HCvsSD$Pvals_FDR05)] = 0
+HCvsAD$Tvals_FDR05[HCvsAD$Pvals_FDR05 > 0.05 | is.na(HCvsAD$Pvals_FDR05)] = 0
+```
+
+## Plot: t-Test
+```{r Plot: t-Test, fig.height=4.5, fig.width=6}
+limF = c(-3, 5)
+
+p1 = ggplot(melt(HCvsSD$Tvals[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limF, space = "Lab", name = "t") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12, angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("HC > SD")
+
+p2 = ggplot(melt(HCvsAD$Tvals[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limF, space = "Lab", name = "t") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12, angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("HC > AD")
+
+p3 = ggplot(melt(HCvsSD$Tvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limF, space = "Lab", name = "t") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12, angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("HC > SD (FDR 0.05)")
+
+p4 = ggplot(melt(HCvsAD$Tvals_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limF, space = "Lab", name = "t") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12, angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("HC > AD (FDR 0.05)")
+
+plot_grid(p1, p2, p3, p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
+```
+
+## Significant edges from t-test
+HC > SD
+```{r Significant edges from t.test}
+idx = which(t(HCvsSD$Tvals_FDR05) > 0, arr.ind = T)
+cbind(as.character(rois$AAL_Name[match(idx[,1], rois$position)]),
+      as.character(rois$AAL_Name[match(idx[,2], rois$position)]))
+```
+
+HC > AD
+```{r Significant edges from t.test cont.}
+idx = which(t(HCvsAD$Tvals_FDR05) > 0, arr.ind = T)
+cbind(as.character(rois$AAL_Name[match(idx[,1], rois$position)]),
+      as.character(rois$AAL_Name[match(idx[,2], rois$position)]))
+```
+
 
 ## Group difference
 ```{r Group difference, fig.height=2.3, fig.width=5}
-d = data.frame(R = R[3,1,], Z = Z[3,1,], group=group)
+d = data.frame(R = R[3,1,], Z = Z[3,1,], group=infos$group)
 d = subset(d, infos$included)
 
 p1 = ggplot(d, aes(x=group, y=R)) + geom_violin() + geom_boxplot(width=0.2) +
