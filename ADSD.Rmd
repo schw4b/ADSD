@@ -1,7 +1,7 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "10 May 2017"
+date: "12 May 2017"
 output: html_document
 ---
 
@@ -335,8 +335,8 @@ cbind(as.character(rois$AAL_Name[match(idx[,1], rois$position)]),
       as.character(rois$AAL_Name[match(idx[,2], rois$position)]))
 ```
 
-## t-test SD vs HC
-```{r t-test SD vs HC}
+## t-test SD vs HC and AD vs HC
+```{r t-test SD vs HC and AD vs HC}
 HCvsSD=list()
 HCvsAD=list()
 
@@ -446,9 +446,8 @@ cbind(as.character(rois$AAL_Name[match(idx[,1], rois$position)]),
       as.character(rois$AAL_Name[match(idx[,2], rois$position)]))
 ```
 
-
-## Group difference
-```{r Group difference, fig.height=2.3, fig.width=5}
+## Example of a post-hoc test hipp L parahipp L
+```{r Example of a post-hoc test hipp L parahipp L, fig.height=2.3, fig.width=5}
 d = data.frame(R = R[3,1,], Z = Z[3,1,], group=infos$group)
 d = subset(d, infos$included)
 
