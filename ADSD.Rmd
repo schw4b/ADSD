@@ -1,15 +1,17 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "12 May 2017"
+date: "23 May 2017"
 output: html_document
 ---
 
-## Install R Markdown 
+## Install packages
 ```{r Install packages}
 # install.packages("rmarkdown")
 # install.packages("testit")
 # install.packages("Hmisc")
+# install.packages("nortest")
+# install.packages("multdyn")
 ```
 
 ```{r setup, include=FALSE}
@@ -23,21 +25,24 @@ library(reshape2)
 library(ggplot2)
 library(cowplot)
 library(Hmisc)
+library(nortest)
+library(multdyn)
 ```
 
 ## Main Variables
 ```{r Main variables}
 N = 62
-N_ROIS = 14
+N_ROIS = c(14, 200)
 PATH_HOME = "/home/simon"
-PATH_ROIS = file.path(PATH_HOME, 'Drive', '14RoisN62') 
-PATH = file.path(PATH_HOME, 'Data', 'ADSD')
+PATH_ROIS = file.path(PATH_HOME, 'Drive', '14RoisN62')
+PATH_ROIS200 = file.path(PATH_HOME, 'Drive', '200RoisN62')
+PATH = file.path(PATH_HOME, 'workspace', 'ADSD-nbook')
 ```
 
 ## Subject infos
 ```{r Subjects infos}
-infos = read.table(file.path(PATH, 'infos.txt'), header = T)
-rois = read.table(file.path(PATH, 'ROIs.txt'), header = T)
+infos = read.table(file.path(PATH, 'ADSD_info.txt'), header = T)
+rois = read.table(file.path(PATH, 'ROIs_14.txt'), header = T)
 # Excluded subjects
 infos$included = rep(TRUE,N)
 # DVARS; more than 20% volumes affected:
@@ -68,6 +73,12 @@ N_AD  = sum(infos$isAD)
 N_HC  = sum(infos$isHC)
 assert(N_SD + N_AD + N_HC == N)
 
+# DVARS
+dvars=read.table(file.path(PATH, 'DVARS.txt'), header = T)
+assert(nrow(dvars) == nrow(infos))
+infos = cbind(infos, dvars)
+rm(dvars)
+
 print(infos)
 ```
 ## Demographics
@@ -91,33 +102,56 @@ print(d.demog)
 Time series are extracted using the k=200 Craddock atlas with a selection of ROIS most prominently overlapping with tempral AAL regions. `AAL_Nr` indicates atlas label, `position` indicates position in matrices from figures and plots. In these, first uneven (left), then even (right) regions are shown.
 
 ```{r ROI labels}
-rois$position = c(t(array(c(1:N_ROIS), dim=c(7,2))))
+rois$position = c(t(array(c(1:N_ROIS[1]), dim=c(7,2))))
 print(rois)
 
 # reorder ROIS, first left (uneven) then right (even) rois
-reidx=c(seq(1,N_ROIS,2), seq(2,N_ROIS,2))
+reidx=c(seq(1,N_ROIS[1],2), seq(2,N_ROIS[1],2))
 
 # lower diagonal
-tri = lower.tri(array(0, dim=c(N_ROIS, N_ROIS)))
+tri = lower.tri(array(0, dim=c(N_ROIS[1], N_ROIS[1])))
 ```
 
 ## DVARS analysis
-```{r DVARS analysis}
+```{r DVARS analysis, fig.height=4, fig.width=4}
 a = read.table(file.path(PATH, 'DVARS_vols_affected.txt'), header = F)
 b = cbind(rep(0,N), a[,1:ncol(a)-1])
 affected = a | b
+rm(a); rm(b)
 
 # which subjetc have more than 20% of their volumes affected?
 print(as.character(infos$id[rowSums(affected) > infos$N_vols*0.2]))
-```
-DVARS diagnostics
 
-```{r DVARS diagnostics}
-dvars=read.table(file.path(PATH, 'DVARS.txt'), header = T)
+lillie.test(infos$SD_SDVARS_X2)
+summary(aov(SD_SDVARS_X2 ~ group, data=infos))
+
+lillie.test(infos$g_Avar)
+summary(aov(g_Avar ~ group, data=infos))
+
+# DVARS after excluding subjects
+infos_ = subset(infos, included)
+summary(aov(SD_SDVARS_X2 ~ group, data=infos_))
+summary(aov(g_Avar ~ group, data=infos_))
+
+p1 = ggplot(infos, aes(x=group, y=SD_SDVARS_X2)) + geom_violin() + geom_boxplot(width=0.4) + ylim(c(0.5,2)) +
+  geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002))
+
+p2 = ggplot(infos_, aes(x=group, y=SD_SDVARS_X2)) + geom_violin() + geom_boxplot(width=0.4) + ylim(c(0.5,2)) +
+  geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002)) + 
+  ggtitle("after exclusion")
+
+p3 = ggplot(infos, aes(x=group, y=g_Avar)) + geom_violin() + geom_boxplot(width=0.4) +
+  geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002))
+
+p4 = ggplot(infos_, aes(x=group, y=g_Avar)) + geom_violin() + geom_boxplot(width=0.4) +
+  geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002)) + 
+  ggtitle("after exclusion")
+
+plot_grid(p1, p2, p3, p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
 ```
 
-## Load time series of 14 Rois
-```{r Load time series of 14 Rois, warning=FALSE}
+## Load time series of 14 ROIs
+```{r Load time series of 14 ROIs, warning=FALSE}
 # first stockholm sample, then china sample
 f1 = list.files(path = PATH_ROIS, pattern = "^ADSD.*.txt")
 f2 = list.files(path = PATH_ROIS, pattern = "^20.*.txt")
@@ -125,8 +159,8 @@ f = c(f1,f2)
 rm(f1); rm(f2)
 assert(length(f) == N)
 
-R = array(NA, dim=c(N_ROIS, N_ROIS, N))
-P = array(NA, dim=c(N_ROIS, N_ROIS, N))
+R = array(NA, dim=c(N_ROIS[1], N_ROIS[1], N))
+P = array(NA, dim=c(N_ROIS[1], N_ROIS[1], N))
 for (s in 1:N) {
   d = read.table(file.path(PATH_ROIS, f[s]), header = F)
   # R[,,s] = cor(d)
@@ -143,57 +177,41 @@ for (s in 1:N) {
 ## Mean correlation per group
 ```{r Mean correlation per group}
 # Correlation R
-meanRSD = apply(R[,,infos$isSD & infos$included], c(1,2), mean)
-meanRAD = apply(R[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
-meanRHC = apply(R[,,infos$isHC & infos$included], c(1,2), mean)
+FC = list()
+FC$R$SD = apply(R[,,infos$isSD & infos$included], c(1,2), mean)
+FC$R$AD = apply(R[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+FC$R$HC = apply(R[,,infos$isHC & infos$included], c(1,2), mean)
 
 # P values
-meanPSD = apply(P[,,infos$isSD & infos$included], c(1,2), mean)
-meanPAD = apply(P[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
-meanPHC = apply(P[,,infos$isHC & infos$included], c(1,2), mean)
-
-# p = 0.01 uncorrected
-meanRSD_01 = meanRSD
-meanRSD_01[meanPSD > 0.01] = 0
-meanRAD_01 = meanRAD
-meanRAD_01[meanPAD > 0.01] = 0
-meanRHC_01 = meanRHC
-meanRHC_01[meanPHC > 0.01] = 0
+FC$P$SD = apply(P[,,infos$isSD & infos$included], c(1,2), mean)
+FC$P$AD = apply(P[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+FC$P$HC = apply(P[,,infos$isHC & infos$included], c(1,2), mean)
 
 # FDR 0.05
-meanPSD_ = meanPSD[reidx,reidx]
-meanPAD_ = meanPAD[reidx,reidx]
-meanPHC_ = meanPHC[reidx,reidx]
-
-meanRSD_FDR05 = meanRSD[reidx,reidx]
-meanRAD_FDR05 = meanRAD[reidx,reidx]
-meanRHC_FDR05 = meanRHC[reidx,reidx]
-
-meanPSD_[!tri] = NA
-meanPAD_[!tri] = NA
-meanPHC_[!tri] = NA
-
-#meanPSD_FDR05 = array(p.adjust(meanPSD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-#meanPAD_FDR05 = array(p.adjust(meanPAD_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
-#meanPHC_FDR05 = array(p.adjust(meanPHC_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+tmp = rbind(FC$P$SD, FC$P$AD, FC$P$HC)
+tmp[!rbind(tri,tri,tri)]=NA
 
 # Global FDR across groups
-M = array(p.adjust(rbind(meanPSD_, meanPAD_, meanPHC_), method = "fdr"), 
-          dim=c(3*N_ROIS, N_ROIS))
-meanPSD_FDR05 = M[1:14,]
-meanPAD_FDR05 = M[15:28,]
-meanPHC_FDR05 = M[29:42,]
+M = array(p.adjust(tmp, method = "fdr"), dim=c(3*N_ROIS[1], N_ROIS[1]))
 
-meanRSD_FDR05[meanPSD_FDR05 > 0.05 | is.na(meanPSD_FDR05)] = 0
-meanRAD_FDR05[meanPAD_FDR05 > 0.05 | is.na(meanPAD_FDR05)] = 0
-meanRHC_FDR05[meanPHC_FDR05 > 0.05 | is.na(meanPHC_FDR05)] = 0
+FC$R_FDR05$SD = FC$R$SD
+FC$R_FDR05$AD = FC$R$AD
+FC$R_FDR05$HC = FC$R$HC
+
+FC$P_FDR05$SD = M[1:14,]
+FC$P_FDR05$AD = M[15:28,]
+FC$P_FDR05$HC = M[29:42,]
+
+FC$R_FDR05$SD[FC$P_FDR05$SD >= 0.05 | is.na(FC$P_FDR05$AD)] = 0
+FC$R_FDR05$AD[FC$P_FDR05$AD >= 0.05 | is.na(FC$P_FDR05$AD)] = 0
+FC$R_FDR05$HC[FC$P_FDR05$HC >= 0.05 | is.na(FC$P_FDR05$HC)] = 0
 ```
 
 ## Plot: FC
 ```{r Plot: FC, fig.height=4.5, fig.width=9}
 limR = c(0, 0.7)
 
-p1 = ggplot(melt(meanRSD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p1 = ggplot(melt(FC$R$SD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -203,7 +221,7 @@ p1 = ggplot(melt(meanRSD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", f
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("SD")
 
-p2 = ggplot(melt(meanRAD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p2 = ggplot(melt(FC$R$AD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -213,7 +231,7 @@ p2 = ggplot(melt(meanRAD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", f
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("AD")
 
-p3 = ggplot(melt(meanRHC[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p3 = ggplot(melt(FC$R$HC[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -223,7 +241,7 @@ p3 = ggplot(melt(meanRHC[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", f
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("HC")
 
-p4 = ggplot(melt(meanRSD_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p4 = ggplot(melt(FC$R_FDR05$SD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -233,7 +251,7 @@ p4 = ggplot(melt(meanRSD_FDR05), aes_string(x = "Var1", y = "Var2", fill = "valu
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("FDR 0.05")
 
-p5 = ggplot(melt(meanRAD_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p5 = ggplot(melt(FC$R_FDR05$AD[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -243,7 +261,7 @@ p5 = ggplot(melt(meanRAD_FDR05), aes_string(x = "Var1", y = "Var2", fill = "valu
         axis.text.y = element_text(size=12)) + 
   scale_y_reverse() + ggtitle("FDR 0.05")
 
-p6 = ggplot(melt(meanRHC_FDR05), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+p6 = ggplot(melt(FC$R_FDR05$HC[reidx,reidx]*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
   scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
                        midpoint = 0, limit = limR, space = "Lab", name = "R") +
@@ -265,10 +283,10 @@ Z = 0.5*(log(1+R) - log(1-R))
 ## One-way ANOVA across groups
 Null hypothesis is AD = SD = HC.
 ```{r One-way ANOVA across groups}
-Fvals = array(0, dim=c(N_ROIS, N_ROIS))
-Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
-for (i in 1:N_ROIS) {
-  for (j in 1:N_ROIS) {
+Fvals = array(0, dim=c(N_ROIS[1], N_ROIS[1]))
+Pvals = array(NA, dim=c(N_ROIS[1], N_ROIS[1]))
+for (i in 1:N_ROIS[1]) {
+  for (j in 1:N_ROIS[1]) {
     if (i != j ) {
       y = Z[i,j,]
       result = summary(aov(y[infos$included] ~ infos$group[infos$included]))
@@ -286,7 +304,7 @@ Fvals_01[Pvals > 0.01] = 0
 # FDR
 Pvals_ = Pvals[reidx,reidx]
 Pvals_[!tri] = NA
-Pvals_FDR05 = array(p.adjust(Pvals_, method = "fdr"), dim=c(N_ROIS,N_ROIS))
+Pvals_FDR05 = array(p.adjust(Pvals_, method = "fdr"), dim=c(N_ROIS[1],N_ROIS[1]))
 Fvals_FDR05 = Fvals[reidx,reidx]
 Fvals_FDR05[Pvals_FDR05 > 0.05 | is.na(Pvals_FDR05)] = 0
 ```
@@ -340,14 +358,14 @@ cbind(as.character(rois$AAL_Name[match(idx[,1], rois$position)]),
 HCvsSD=list()
 HCvsAD=list()
 
-HCvsSD$Tvals = array(0, dim=c(N_ROIS, N_ROIS))
-HCvsSD$Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
+HCvsSD$Tvals = array(0, dim=c(N_ROIS[1], N_ROIS[1]))
+HCvsSD$Pvals = array(NA, dim=c(N_ROIS[1], N_ROIS[1]))
 
-HCvsAD$Tvals = array(0, dim=c(N_ROIS, N_ROIS))
-HCvsAD$Pvals = array(NA, dim=c(N_ROIS, N_ROIS))
+HCvsAD$Tvals = array(0, dim=c(N_ROIS[1], N_ROIS[1]))
+HCvsAD$Pvals = array(NA, dim=c(N_ROIS[1], N_ROIS[1]))
 
-for (i in 1:N_ROIS) {
-  for (j in 1:N_ROIS) {
+for (i in 1:N_ROIS[1]) {
+  for (j in 1:N_ROIS[1]) {
     if (i != j ) {
       
       y = Z[i,j,]
@@ -373,7 +391,7 @@ b = HCvsAD$Pvals[reidx,reidx]
 a[!tri] = NA
 b[!tri] = NA
 
-M = array(p.adjust(rbind(a,b), method = "fdr"), dim=c(2*N_ROIS, N_ROIS))
+M = array(p.adjust(rbind(a,b), method = "fdr"), dim=c(2*N_ROIS[1], N_ROIS[1]))
 HCvsSD$Pvals_FDR05 = M[1:14,]
 HCvsAD$Pvals_FDR05 = M[15:28,]
 
@@ -466,4 +484,262 @@ summary(aov(Z ~ group, data=d))
 
 ```
 
+
+## Load time series of 200 Rois
+```{r Load time series of 200 Rois, warning=FALSE}
+# first stockholm sample, then china sample
+f1 = list.files(path = PATH_ROIS200, pattern = "^ADSD.*.txt")
+f2 = list.files(path = PATH_ROIS200, pattern = "^20.*.txt")
+f = c(f1,f2)
+rm(f1); rm(f2)
+assert(length(f) == N)
+
+R = array(NA, dim=c(N_ROIS[2], N_ROIS[2], N))
+P = array(NA, dim=c(N_ROIS[2], N_ROIS[2], N))
+R_gs = array(NA, dim=c(N_ROIS[2], N_ROIS[2], N))
+P_gs = array(NA, dim=c(N_ROIS[2], N_ROIS[2], N))
+for (s in 1:N) {
+  d = read.table(file.path(PATH_ROIS200, f[s]), header = F)
+  idx = !affected[s,][1:infos$N_vols[s]]
+  d = as.matrix(d[idx,]) # excluding affected scans
+  tmp =  rcorr(d, type="pearson")
+  R[,,s] = tmp$r
+  P[,,s] = tmp$P
+  
+  # global signal regression
+  d_gs = array(NA, dim=dim(d))
+  gs = apply(d, 1, mean, na.rm=T)
+  for (r in 1:N_ROIS[2]) {
+    if (sum(is.na(d[,r])) == length(gs)) {
+      d_gs[,r] = rep(NA, length(gs))
+    } else {
+      fit = lm(d[,r] ~ gs)
+      d_gs[,r] = fit$residuals
+    }
+  }
+  
+  tmp =  rcorr(d_gs, type="pearson")
+  R_gs[,,s] = tmp$r
+  P_gs[,,s] = tmp$P
+}
+# ADSD_13 has no time series from ROI 11 and ROI 12
+```
+
+
+## Mean correlation per group 200 ROIs
+```{r Mean correlation per group 200 ROIs}
+# Correlation R
+reidx=1:N_ROIS[2]
+tri = lower.tri(array(0, dim=c(N_ROIS[2], N_ROIS[2])))
+
+FC200 = list()
+FC200$R$SD = apply(R[,,infos$isSD & infos$included], c(1,2), mean)
+FC200$R$AD = apply(R[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+FC200$R$HC = apply(R[,,infos$isHC & infos$included], c(1,2), mean)
+
+# P values
+FC200$P$SD = apply(P[,,infos$isSD & infos$included], c(1,2), mean)
+FC200$P$AD = apply(P[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+FC200$P$HC = apply(P[,,infos$isHC & infos$included], c(1,2), mean)
+
+# FDR 0.05
+tmp = rbind(FC200$P$SD, FC200$P$AD, FC200$P$HC)
+tmp[!rbind(tri,tri,tri)]=NA
+
+# Global FDR across groups
+M = array(p.adjust(tmp, method = "fdr"), dim=c(3*N_ROIS[2], N_ROIS[2]))
+
+FC200$R_FDR05$SD = FC200$R$SD
+FC200$R_FDR05$AD = FC200$R$AD
+FC200$R_FDR05$HC = FC200$R$HC
+
+FC200$P_FDR05$SD = M[1:200,]
+FC200$P_FDR05$AD = M[201:400,]
+FC200$P_FDR05$HC = M[401:600,]
+
+FC200$R_FDR05$SD[FC200$P_FDR05$SD >= 0.05 | is.na(FC200$P_FDR05$AD)] = 0
+FC200$R_FDR05$AD[FC200$P_FDR05$AD >= 0.05 | is.na(FC200$P_FDR05$AD)] = 0
+FC200$R_FDR05$HC[FC200$P_FDR05$HC >= 0.05 | is.na(FC200$P_FDR05$HC)] = 0
+```
+
+## Plot: FC 200 ROIs
+```{r Plot: FC 200 ROIs, fig.height=15, fig.width=12}
+limR = c(-1, 1)
+p1 = ggplot(melt(rmna(FC200$R$SD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("SD")
+
+p2 = ggplot(melt(rmna(FC200$R_FDR05$SD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p3 = ggplot(melt(rmna(FC200$R$AD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("AD")
+
+p4 = ggplot(melt(rmna(FC200$R_FDR05$AD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p5 = ggplot(melt(rmna(FC200$R$HC[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p6 = ggplot(melt(rmna(FC200$R_FDR05$HC[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+plot_grid(p1, p2, p3, p4, p5, p6, ncol = 2, nrow = 3, rel_widths = c(1, 1))
+```
+
+
+## Mean correlation per group 200 ROIs global signal regression
+```{r Mean correlation per group 200 ROIs global signal regression}
+# Correlation R
+FC200gs = list()
+FC200gs$R$SD = apply(R_gs[,,infos$isSD & infos$included], c(1,2), mean)
+FC200gs$R$AD = apply(R_gs[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+FC200gs$R$HC = apply(R_gs[,,infos$isHC & infos$included], c(1,2), mean)
+
+# P values
+FC200gs$P$SD = apply(P_gs[,,infos$isSD & infos$included], c(1,2), mean)
+FC200gs$P$AD = apply(P_gs[,,infos$isAD & infos$included], c(1,2), mean, na.rm=T) # problem with ADSD_13
+FC200gs$P$HC = apply(P_gs[,,infos$isHC & infos$included], c(1,2), mean)
+
+# FDR 0.05
+tmp = rbind(FC200gs$P$SD, FC200gs$P$AD, FC200gs$P$HC)
+tmp[!rbind(tri,tri,tri)]=NA
+
+# Global FDR across groups
+M = array(p.adjust(tmp, method = "fdr"), dim=c(3*N_ROIS[2], N_ROIS[2]))
+
+FC200gs$R_FDR05$SD = FC200gs$R$SD
+FC200gs$R_FDR05$AD = FC200gs$R$AD
+FC200gs$R_FDR05$HC = FC200gs$R$HC
+
+FC200gs$P_FDR05$SD = M[1:200,]
+FC200gs$P_FDR05$AD = M[201:400,]
+FC200gs$P_FDR05$HC = M[401:600,]
+
+FC200gs$R_FDR05$SD[FC200gs$P_FDR05$SD >= 0.05 | is.na(FC200gs$P_FDR05$AD)] = 0
+FC200gs$R_FDR05$AD[FC200gs$P_FDR05$AD >= 0.05 | is.na(FC200gs$P_FDR05$AD)] = 0
+FC200gs$R_FDR05$HC[FC200gs$P_FDR05$HC >= 0.05 | is.na(FC200gs$P_FDR05$HC)] = 0
+
+reidx=1:N_ROIS[2]
+tri = lower.tri(array(0, dim=c(N_ROIS[2], N_ROIS[2])))
+```
+
+## Plot: FC 200 ROIs global signal regression
+```{r Plot: FC 200 ROIs global signal regression, fig.height=15, fig.width=12}
+limR = c(-1, 1)
+p1 = ggplot(melt(rmna(FC200gs$R$SD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("SD")
+
+p2 = ggplot(melt(rmna(FC200gs$R_FDR05$SD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p3 = ggplot(melt(rmna(FC200gs$R$AD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("AD")
+
+p4 = ggplot(melt(rmna(FC200gs$R_FDR05$AD[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p5 = ggplot(melt(rmna(FC200gs$R$HC[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+p6 = ggplot(melt(rmna(FC200gs$R_FDR05$HC[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
+  geom_tile(color = "gray60") +
+  scale_fill_gradient2(low  = "blue", mid  = "white", high = "red",
+                       midpoint = 0, limit = limR, space = "Lab", name = "R") +
+  theme(axis.ticks = element_blank(), axis.line = element_blank(),
+        text = element_text(size=12), plot.title = element_text(size=12),
+        axis.text.x = element_text(size=12,angle=0),
+        axis.text.y = element_text(size=12)) + 
+  scale_y_reverse() + ggtitle("FDR 0.05")
+
+plot_grid(p1, p2, p3, p4, p5, p6, ncol = 2, nrow = 3, rel_widths = c(1, 1))
+```
+
+## Count sign. edges
+```{r Count sign. edges}
+l=(c("SD", "AD", "HC"))
+x1 = c(sum(FC200$R_FDR05$SD*tri > 0, na.rm = T), sum(FC200$R_FDR05$AD*tri > 0),
+       sum(FC200$R_FDR05$HC*tri > 0))
+sprintf("%s %d %d%%", l, x1, round(x1/x1[3]*100))
+x2 = c(sum(FC200gs$R_FDR05$SD*tri > 0, na.rm = T), sum(FC200gs$R_FDR05$AD*tri > 0),
+       sum(FC200gs$R_FDR05$HC*tri > 0))
+sprintf("%s %d %d%%", l, x2, round(x2/x2[3]*100))
+
+```
 
