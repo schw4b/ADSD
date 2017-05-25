@@ -450,6 +450,7 @@ plot_grid(p1, p2, p3, p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
 ```
 
 ## Significant edges from t-test
+
 ### HC > SD
 ```{r Significant edges from t.test}
 idx = which(t(HCvsSD$Tvals_FDR05) > 0, arr.ind = T)
@@ -683,8 +684,8 @@ for (i in 1:N_ROIS[3]) {
 tmp = rbind(HCvsSD$Pvals, HCvsAD$Pvals)
 M = array(p.adjust(tmp, method = "fdr"), dim=c(2*N_ROIS[3], N_ROIS[3]))
 
-HCvsSD$Pvals_FDR05 = M[1:68,]
-HCvsAD$Pvals_FDR05 = M[69:136,]
+HCvsSD$Pvals_FDR05 = M[1:54,]
+HCvsAD$Pvals_FDR05 = M[54:108,]
 
 HCvsSD$Tvals_FDR05 = HCvsSD$Tvals
 HCvsAD$Tvals_FDR05 = HCvsAD$Tvals
@@ -748,6 +749,7 @@ p4 = ggplot(melt(HCvsAD$Tvals_FDR05[reidx,reidx]), aes_string(x = "Var1", y = "V
 
 plot_grid(p1,p2,p3,p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
 ```
+
 ### HC > SD
 ```{r Significant edges HC vs SD}
 idx = which(HCvsSD$Pvals_FDR05 < 0.05, arr.ind = T)
@@ -762,8 +764,7 @@ edges = array(tmpidx[idx], dim=c(nrow(idx),2))
 print(edges)
 ```
 
-
-## Mean correlation per group 200 ROIs after global sign. reg.n
+## Mean correlation per group 200 ROIs after global sign. reg.
 ```{r Mean correlation per group 200 ROIs global sig reg}
 # Correlation R
 FC200gs = list()
@@ -899,12 +900,13 @@ HCvsSD$Pvals = array(NA, dim=c(N_ROIS[3], N_ROIS[3]))
 HCvsAD$Tvals = array(NA, dim=c(N_ROIS[3], N_ROIS[3]))
 HCvsAD$Pvals = array(NA, dim=c(N_ROIS[3], N_ROIS[3]))
 
+mAD = mSD = mHC = array(NA, dim=c(N_ROIS[3], N_ROIS[3]))
+
 for (i in 1:N_ROIS[3]) {
   for (j in 1:N_ROIS[3]) {
     if (i > j ) {
       
       y = Z[tmpidx[i],tmpidx[j],]
-      idx = (infos$isSD | infos$isHC) & infos$included
       
       if (sum(is.na(y[idx]))/N > 0.33) {# ROIS missing in 1/3 of subjects
         HCvsSD$Tvals[i,j] = NA
@@ -913,16 +915,21 @@ for (i in 1:N_ROIS[3]) {
         HCvsAD$Pvals[i,j] = NA
         
       } else {
+        idx = (infos$isSD | infos$isHC) & infos$included
         result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
                         alternative = "greater")
         HCvsSD$Tvals[i,j] = result[[1]]
         HCvsSD$Pvals[i,j] = result[[3]]
+        mSD[i,j] = result[[5]][2]
+        mHC[i,j] = result[[5]][1]
         
         idx = (infos$isAD | infos$isHC) & infos$included
         result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
                         alternative = "less")
         HCvsAD$Tvals[i,j] = -result[[1]]
         HCvsAD$Pvals[i,j] = result[[3]]
+        mAD[i,j] = result[[5]][1]
+        
       }
     }
   }
@@ -932,8 +939,8 @@ for (i in 1:N_ROIS[3]) {
 tmp = rbind(HCvsSD$Pvals, HCvsAD$Pvals)
 M = array(p.adjust(tmp, method = "fdr"), dim=c(2*N_ROIS[3], N_ROIS[3]))
 
-HCvsSD$Pvals_FDR05 = M[1:68,]
-HCvsAD$Pvals_FDR05 = M[69:136,]
+HCvsSD$Pvals_FDR05 = M[1:N_ROIS[3],]
+HCvsAD$Pvals_FDR05 = M[(N_ROIS[3]+1):(N_ROIS[3]*2),]
 
 HCvsSD$Tvals_FDR05 = HCvsSD$Tvals
 HCvsAD$Tvals_FDR05 = HCvsAD$Tvals
@@ -945,6 +952,7 @@ HCvsSD$Tvals_FDR05[HCvsSD$Pvals_FDR05 >= 0.05 | is.na(HCvsSD$Pvals_FDR05)] = 0
 HCvsAD$Tvals_FDR05[HCvsAD$Pvals_FDR05 >= 0.05 | is.na(HCvsAD$Pvals_FDR05)] = 0
 
 # max(rbind(HCvsSD$Tvals,HCvsAD$Tvals), na.rm=T)
+# min(rbind(HCvsSD$Tvals,HCvsAD$Tvals), na.rm=T)
 
 ```
 
@@ -953,7 +961,7 @@ HCvsAD$Tvals_FDR05[HCvsAD$Pvals_FDR05 >= 0.05 | is.na(HCvsAD$Pvals_FDR05)] = 0
 reidx=1:N_ROIS[3]
 tri = lower.tri(array(0, dim=c(N_ROIS[3], N_ROIS[3])))
 
-mylim = c(-5.2, 5.2)
+mylim = c(-5, 5)
 
 p1 = ggplot(melt(rmna(HCvsSD$Tvals[reidx,reidx])*tri), aes_string(x = "Var1", y = "Var2", fill = "value")) +
   geom_tile(color = "gray60") +
@@ -1001,10 +1009,21 @@ plot_grid(p1,p2,p3,p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
 ## Significant edges
 ### HC > SD
 ```{r Significant edges HC vs SD after global sign reg}
+rois = read.table(file.path(PATH, 'ROIs_22.txt'), header = T)
+map  = read.table(file.path(PATH, 'Cradd_AAL_mapping.txt'), header = T)
+
 idx = which(HCvsSD$Pvals_FDR05 < 0.05, arr.ind = T)
 edges = array(tmpidx[idx], dim=c(nrow(idx),2))
 print(edges)
 write(edges, file=file.path(PATH, 'SDedges.txt'), ncolumns = 1)
+
+# map craddock numbers to AAL labels
+result = array(character(nrow(edges)*2), c(nrow(edges),2))
+for (i in 1:nrow(edges)) {
+  result[i,] = c(as.character(rois$AAL_Name[map$aal[match(edges[i,1], map$crad)]]),
+                 as.character(rois$AAL_Name[map$aal[match(edges[i,2], map$crad)]]))
+}
+print(result)
 ```
 
 ### HC > AD
@@ -1013,4 +1032,20 @@ idx = which(HCvsAD$Pvals_FDR05 < 0.05, arr.ind = T)
 edges = array(tmpidx[idx], dim=c(nrow(idx),2))
 print(edges)
 write(edges, file=file.path(PATH, 'ADedges.txt'), ncolumns = 1)
+
+# map craddock numbers to AAL labels
+result = array(character(nrow(edges)*2), c(nrow(edges),2))
+for (i in 1:nrow(edges)) {
+  result[i,] = c(as.character(rois$AAL_Name[map$aal[match(edges[i,1], map$crad)]]),
+                 as.character(rois$AAL_Name[map$aal[match(edges[i,2], map$crad)]]))
+}
+print(result)
+```
+
+## Mean
+```{r Mean}
+x=mHC[HCvsAD$Pvals_FDR05 < 0.05]
+x[!is.na(x)]
+x=mAD[HCvsAD$Pvals_FDR05 < 0.05]
+x[!is.na(x)]
 ```
