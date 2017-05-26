@@ -12,6 +12,7 @@ output: html_document
 # install.packages("Hmisc")
 # install.packages("nortest")
 # install.packages("multdyn")
+# install.packages("perm")
 ```
 
 ```{r setup, include=FALSE}
@@ -27,6 +28,7 @@ library(cowplot)
 library(Hmisc)
 library(nortest)
 library(multdyn)
+library(perm)
 ```
 
 ## Main variables
@@ -656,26 +658,21 @@ for (i in 1:N_ROIS[3]) {
     if (i > j ) {
       
       y = Z[tmpidx[i],tmpidx[j],]
-      idx = (infos$isSD | infos$isHC) & infos$included
       
-      if (sum(is.na(y[idx]))/N > 0.33) {# ROIS missing in 1/3 of subjects
-        HCvsSD$Tvals[i,j] = NA
-        HCvsSD$Pvals[i,j] = NA
-        HCvsAD$Tvals[i,j] = NA
-        HCvsAD$Pvals[i,j] = NA
-        
-      } else {
-        result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
-                        alternative = "greater")
-        HCvsSD$Tvals[i,j] = result[[1]]
-        HCvsSD$Pvals[i,j] = result[[3]]
-        
-        idx = (infos$isAD | infos$isHC) & infos$included
-        result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
-                        alternative = "less")
-        HCvsAD$Tvals[i,j] = -result[[1]]
-        HCvsAD$Pvals[i,j] = result[[3]]
-      }
+      # SD
+      idx = (infos$isSD | infos$isHC) & infos$included
+      result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
+                      alternative = "greater")
+      HCvsSD$Tvals[i,j] = result[[1]]
+      HCvsSD$Pvals[i,j] = result[[3]]
+      
+      # AD
+      idx = (infos$isAD | infos$isHC) & infos$included
+      result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
+                      alternative = "less")
+      HCvsAD$Tvals[i,j] = -result[[1]]
+      HCvsAD$Pvals[i,j] = result[[3]]
+      
     }
   }
 }
@@ -684,8 +681,8 @@ for (i in 1:N_ROIS[3]) {
 tmp = rbind(HCvsSD$Pvals, HCvsAD$Pvals)
 M = array(p.adjust(tmp, method = "fdr"), dim=c(2*N_ROIS[3], N_ROIS[3]))
 
-HCvsSD$Pvals_FDR05 = M[1:54,]
-HCvsAD$Pvals_FDR05 = M[54:108,]
+HCvsSD$Pvals_FDR05 = M[1:N_ROIS[3],]
+HCvsAD$Pvals_FDR05 = M[(N_ROIS[3]+1):(N_ROIS[3]*2),]
 
 HCvsSD$Tvals_FDR05 = HCvsSD$Tvals
 HCvsAD$Tvals_FDR05 = HCvsAD$Tvals
@@ -792,7 +789,7 @@ FC200gs$P_FDR05$SD = M[1:200,]
 FC200gs$P_FDR05$AD = M[201:400,]
 FC200gs$P_FDR05$HC = M[401:600,]
 
-FC200gs$R_FDR05$SD[FC200gs$P_FDR05$SD >= 0.05 | is.na(FC200gs$P_FDR05$AD)] = 0
+FC200gs$R_FDR05$SD[FC200gs$P_FDR05$SD >= 0.05 | is.na(FC200gs$P_FDR05$SD)] = 0
 FC200gs$R_FDR05$AD[FC200gs$P_FDR05$AD >= 0.05 | is.na(FC200gs$P_FDR05$AD)] = 0
 FC200gs$R_FDR05$HC[FC200gs$P_FDR05$HC >= 0.05 | is.na(FC200gs$P_FDR05$HC)] = 0
 
@@ -904,33 +901,31 @@ mAD = mSD = mHC = array(NA, dim=c(N_ROIS[3], N_ROIS[3]))
 
 for (i in 1:N_ROIS[3]) {
   for (j in 1:N_ROIS[3]) {
-    if (i > j ) {
+    if (i > j) {
       
-      y = Z[tmpidx[i],tmpidx[j],]
+      y = Z[tmpidx[i], tmpidx[j], ]
       
-      if (sum(is.na(y[idx]))/N > 0.33) {# ROIS missing in 1/3 of subjects
-        HCvsSD$Tvals[i,j] = NA
-        HCvsSD$Pvals[i,j] = NA
-        HCvsAD$Tvals[i,j] = NA
-        HCvsAD$Pvals[i,j] = NA
-        
-      } else {
-        idx = (infos$isSD | infos$isHC) & infos$included
-        result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
-                        alternative = "greater")
-        HCvsSD$Tvals[i,j] = result[[1]]
-        HCvsSD$Pvals[i,j] = result[[3]]
-        mSD[i,j] = result[[5]][2]
-        mHC[i,j] = result[[5]][1]
-        
-        idx = (infos$isAD | infos$isHC) & infos$included
-        result = t.test(y[idx] ~ infos$group[idx], var.equal=T,
-                        alternative = "less")
-        HCvsAD$Tvals[i,j] = -result[[1]]
-        HCvsAD$Pvals[i,j] = result[[3]]
-        mAD[i,j] = result[[5]][1]
-        
-      }
+      # SD
+      idx = (infos$isSD | infos$isHC) & infos$included
+      result = t.test(y[idx] ~ infos$group[idx],
+                      var.equal = T,
+                      alternative = "greater")
+      
+      HCvsSD$Tvals[i, j] = result[[1]]
+      HCvsSD$Pvals[i, j] = result[[3]]
+      mSD[i, j] = result[[5]][2]
+      mHC[i, j] = result[[5]][1]
+      
+      # AD
+      idx = (infos$isAD | infos$isHC) & infos$included
+      result = t.test(y[idx] ~ infos$group[idx],
+                      var.equal = T,
+                      alternative = "less")
+      
+      HCvsAD$Tvals[i, j] = -result[[1]]
+      HCvsAD$Pvals[i, j] = result[[3]]
+      mAD[i, j] = result[[5]][1]
+      
     }
   }
 }
@@ -1013,39 +1008,75 @@ rois = read.table(file.path(PATH, 'ROIs_22.txt'), header = T)
 map  = read.table(file.path(PATH, 'Cradd_AAL_mapping.txt'), header = T)
 
 idx = which(HCvsSD$Pvals_FDR05 < 0.05, arr.ind = T)
-edges = array(tmpidx[idx], dim=c(nrow(idx),2))
-print(edges)
-write(edges, file=file.path(PATH, 'SDedges.txt'), ncolumns = 1)
+edgesSD = array(tmpidx[idx], dim=c(nrow(idx),2))
+print(edgesSD)
+write(edgesSD, file=file.path(PATH, 'SDedges.txt'), ncolumns = 1)
 
 # map craddock numbers to AAL labels
-result = array(character(nrow(edges)*2), c(nrow(edges),2))
-for (i in 1:nrow(edges)) {
-  result[i,] = c(as.character(rois$AAL_Name[map$aal[match(edges[i,1], map$crad)]]),
-                 as.character(rois$AAL_Name[map$aal[match(edges[i,2], map$crad)]]))
+resultSD = array(character(nrow(edgesSD)*2), c(nrow(edgesSD),2))
+for (i in 1:nrow(edgesSD)) {
+  resultSD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesSD[i,1], map$crad)]]),
+                 as.character(rois$AAL_Name[map$aal[match(edgesSD[i,2], map$crad)]]))
 }
-print(result)
+print(resultSD)
 ```
 
 ### HC > AD
 ```{r Significant edges HC vs SD cont after glob sign reg}
 idx = which(HCvsAD$Pvals_FDR05 < 0.05, arr.ind = T)
-edges = array(tmpidx[idx], dim=c(nrow(idx),2))
-print(edges)
-write(edges, file=file.path(PATH, 'ADedges.txt'), ncolumns = 1)
+edgesAD = array(tmpidx[idx], dim=c(nrow(idx),2))
+print(edgesAD)
+write(edgesAD, file=file.path(PATH, 'ADedges.txt'), ncolumns = 1)
 
 # map craddock numbers to AAL labels
-result = array(character(nrow(edges)*2), c(nrow(edges),2))
-for (i in 1:nrow(edges)) {
-  result[i,] = c(as.character(rois$AAL_Name[map$aal[match(edges[i,1], map$crad)]]),
-                 as.character(rois$AAL_Name[map$aal[match(edges[i,2], map$crad)]]))
+resultAD = array(character(nrow(edgesAD)*2), c(nrow(edgesAD),2))
+for (i in 1:nrow(edgesAD)) {
+  resultAD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesAD[i,1], map$crad)]]),
+                 as.character(rois$AAL_Name[map$aal[match(edgesAD[i,2], map$crad)]]))
 }
-print(result)
+print(resultAD)
 ```
 
-## Mean
-```{r Mean}
-x=mHC[HCvsAD$Pvals_FDR05 < 0.05]
-x[!is.na(x)]
-x=mAD[HCvsAD$Pvals_FDR05 < 0.05]
-x[!is.na(x)]
+## Z-scores SD
+```{r Z-scores SD, warning=FALSE, fig.height=4, fig.width=7}
+zSD = array(NA, dim=c(sum(infos$isSD & infos$included), nrow(edgesSD)))
+zHC = array(NA, dim=c(sum(infos$isHC & infos$included), nrow(edgesSD)))
+
+p=list()
+for (i in 1:nrow(edgesSD)) {
+  zSD[,i] = Z[edgesSD[i,1], edgesSD[i,2], infos$isSD & infos$included]
+  zHC[,i] = Z[edgesSD[i,1], edgesSD[i,2], infos$isHC & infos$included]
+  
+  d=data.frame(z=c(zSD[,i], zHC[,i]), group=as.factor(c(rep("SD", 23), rep("HC", 17))))
+  
+  p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.2) +
+    geom_point(shape=1, color="gray20", size=1, position = position_jitter(width = 0.2, height = 0.0002)) + 
+    ggtitle(sprintf('%d %s\n%s', i, resultSD[i,1], resultSD[i,2])) + ylim(c(0, 0.8)) +
+    theme(plot.title = element_text(size=10, face = "plain"))
+}
+
+plot_grid(p[[1]], p[[2]], p[[3]], p[[4]], p[[5]], p[[6]], p[[7]], p[[8]], p[[9]], p[[10]], 
+          ncol = 5, nrow = 2)
+
+```
+
+## Z-scores AD
+```{r Z-scores AD, warning=FALSE, fig.height=2, fig.width=3}
+zAD = array(NA, dim=c(sum(infos$isAD & infos$included), nrow(edgesAD)))
+zHC = array(NA, dim=c(sum(infos$isHC & infos$included), nrow(edgesAD)))
+
+p=list()
+for (i in 1:nrow(edgesAD)) {
+  zAD[,i] = Z[edgesAD[i,1], edgesAD[i,2], infos$isAD & infos$included]
+  zHC[,i] = Z[edgesAD[i,1], edgesAD[i,2], infos$isHC & infos$included]
+  
+  d=data.frame(z=c(zAD[,i], zHC[,i]), group=as.factor(c(rep("AD", 16), rep("HC", 17))))
+  
+  p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.2) +
+    geom_point(shape=1, color="gray20", size=1, position = position_jitter(width = 0.2, height = 0.0002)) + 
+    ggtitle(sprintf('%s\n%s', resultAD[i,1], resultAD[i,2])) + ylim(c(0, 0.8)) +
+    theme(plot.title = element_text(size=10, face = "plain"))
+}
+
+plot_grid(p[[1]], p[[2]], ncol = 2, nrow = 1)
 ```
