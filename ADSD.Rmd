@@ -69,10 +69,9 @@ infos$group[infos$isHC] = 'HC'
 infos$group = as.factor(infos$group)
 
 assert(nrow(infos) == N)
-N_SD  = sum(infos$isSD)
-N_AD  = sum(infos$isAD)
-N_HC  = sum(infos$isHC)
-assert(N_SD + N_AD + N_HC == N)
+N_SD  = sum(infos$isSD & infos$included)
+N_AD  = sum(infos$isAD & infos$included)
+N_HC  = sum(infos$isHC & infos$included)
 
 # DVARS
 dvars=read.table(file.path(PATH, 'DVARS.txt'), header = T)
@@ -758,19 +757,21 @@ print(cbind(resultAD[orderAD,], sprintf('%.2f',tvalues[orderAD])))
 
 ## Z-scores SD
 ```{r Z-scores SD, warning=FALSE, fig.height=4, fig.width=7}
-zSD = array(NA, dim=c(sum(infos$isSD & infos$included), nrow(edgesSD)))
-zHC = array(NA, dim=c(sum(infos$isHC & infos$included), nrow(edgesSD)))
+zSD = array(NA, dim=c(N_SD, nrow(edgesSD)))
+zHC = array(NA, dim=c(N_HC, nrow(edgesSD)))
 
 p=list()
 for (i in 1:nrow(edgesSD)) {
   zSD[,i] = Z[edgesSD[i,1], edgesSD[i,2], infos$isSD & infos$included]
   zHC[,i] = Z[edgesSD[i,1], edgesSD[i,2], infos$isHC & infos$included]
   
-  d=data.frame(z=c(zSD[,i], zHC[,i]), group=as.factor(c(rep("SD", 23), rep("HC", 17))))
+  d=data.frame(z=c(zSD[,i], zHC[,i]), group=as.factor(c(rep("SD", N_SD), rep("HC", N_HC))),
+               med = c(rep(median(zSD[,i]), N_SD), rep(median(zHC[,i]), N_HC)))
   
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
-    geom_point(shape=1, color="gray20", size=1, position = position_jitter(width = 0.2, height = 0.0002)) + 
-    ggtitle(sprintf('%d %s\n%s', i, resultSD[i,1], resultSD[i,2])) + ylim(c(0, 0.8)) +
+    geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) + 
+    geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
+    ggtitle(sprintf('%s %d\n%s %d', resultSD[i,1], edgesSD[i,1], resultSD[i,2], edgesSD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
@@ -791,11 +792,13 @@ for (i in 1:nrow(edgesAD)) {
   zAD[,i] = Z[edgesAD[i,1], edgesAD[i,2], infos$isAD & infos$included]
   zHC[,i] = Z[edgesAD[i,1], edgesAD[i,2], infos$isHC & infos$included]
   
-  d=data.frame(z=c(zAD[,i], zHC[,i]), group=as.factor(c(rep("AD", 16), rep("HC", 17))))
+  d=data.frame(z=c(zAD[,i], zHC[,i]), group=as.factor(c(rep("AD", N_AD), rep("HC", N_HC))),
+               med = c(rep(median(zAD[,i]), N_AD), rep(median(zHC[,i]), N_HC)))
   
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
-    geom_point(shape=1, color="gray20", size=1, position = position_jitter(width = 0.2, height = 0.0002)) + 
-    ggtitle(sprintf('%s\n%s', resultAD[i,1], resultAD[i,2])) + ylim(c(0, 0.8)) +
+    geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) + 
+    geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
+    ggtitle(sprintf('%s %d\n%s %d', resultAD[i,1], edgesAD[i,1], resultAD[i,2], edgesAD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
@@ -854,11 +857,13 @@ for (i in 1:nrow(edgesSD)) {
   zSD[,i] = Z[edgesSD[i,1], edgesSD[i,2], infos$isSD & infos$included]
   zHC[,i] = Z[edgesSD[i,1], edgesSD[i,2], infos$isHC & infos$included]
   
-  d=data.frame(z=c(zSD[,i], zHC[,i]), group=as.factor(c(rep("SD", 23), rep("HC", 17))))
+  d=data.frame(z=c(zSD[,i], zHC[,i]), group=as.factor(c(rep("SD", N_SD), rep("HC", N_HC))),
+                med = c(rep(median(zSD[,i]), N_SD), rep(median(zHC[,i]), N_HC)))
   
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
-    geom_point(shape=1, color="gray20", size=1, position = position_jitter(width = 0.2, height = 0.0002)) + 
-    ggtitle(sprintf('%d %s\n%s', i, resultSD[i,1], resultSD[i,2])) + ylim(c(0, 0.8)) +
+    geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) +
+    geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
+    ggtitle(sprintf('%s %d\n%s %d', resultSD[i,1], edgesSD[i,1], resultSD[i,2], edgesSD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
@@ -879,11 +884,13 @@ for (i in 1:nrow(edgesAD)) {
   zAD[,i] = Z[edgesAD[i,1], edgesAD[i,2], infos$isAD & infos$included]
   zHC[,i] = Z[edgesAD[i,1], edgesAD[i,2], infos$isHC & infos$included]
   
-  d=data.frame(z=c(zAD[,i], zHC[,i]), group=as.factor(c(rep("AD", 16), rep("HC", 17))))
+  d=data.frame(z=c(zAD[,i], zHC[,i]), group=as.factor(c(rep("AD", N_AD), rep("HC",N_HC))),
+               med = c(rep(median(zAD[,i]), N_AD), rep(median(zHC[,i]), N_HC)))
   
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
-    geom_point(shape=1, color="gray20", size=1, position = position_jitter(width = 0.2, height = 0.0002)) + 
-    ggtitle(sprintf('%s\n%s', resultAD[i,1], resultAD[i,2])) + ylim(c(0, 0.8)) +
+    geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) + 
+    geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
+    ggtitle(sprintf('%s %d\n%s %d', resultAD[i,1], edgesAD[i,1], resultAD[i,2], edgesAD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
