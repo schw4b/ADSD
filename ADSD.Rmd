@@ -1,7 +1,7 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "30 May 2017"
+date: "10 Jun 2017"
 output: html_document
 ---
 
@@ -37,7 +37,7 @@ N = 62
 N_ROIS = c(14, 200)
 PATH_HOME = "/home/simon"
 PATH_ROIS200 = file.path(PATH_HOME, 'Drive', '200RoisN62')
-PATH = file.path(PATH_HOME, 'workspace', 'ADSD-nbook')
+PATH = file.path(PATH_HOME, 'Data', 'ADSD-nbook')
 ```
 
 ## Subject infos
@@ -119,11 +119,11 @@ infos_ = subset(infos, included)
 kruskal.test(SD_SDVARS_X2 ~ group, data=infos_)
 kruskal.test(g_Avar ~ group, data=infos_)
 
-p1 = ggplot(infos, aes(x=group, y=SD_SDVARS_X2)) + geom_violin() + geom_boxplot(width=0.4) + ylim(c(0.5,2)) +
+p1 = ggplot(infos, aes(x=group, y=SD_SDVARS_X2)) + geom_violin() + geom_boxplot(width=0.4) + coord_cartesian(ylim = c(0.8, 2)) +
   geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002)) +
   ggtitle("before exclusion")
 
-p2 = ggplot(infos_, aes(x=group, y=SD_SDVARS_X2)) + geom_violin() + geom_boxplot(width=0.4) + ylim(c(0.5,2)) +
+p2 = ggplot(infos_, aes(x=group, y=SD_SDVARS_X2)) + geom_violin() + geom_boxplot(width=0.4) + coord_cartesian(ylim = c(0.8, 2)) +
   geom_point(shape=1, color="gray70", size=4, position = position_jitter(width = 0.2, height = 0.0002)) + 
   ggtitle("after exclusion")
 
@@ -718,7 +718,8 @@ plot_grid(p1,p2,p3,p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
 ## Significant edges
 ### HC > SD
 ```{r Significant edges HC vs SD}
-rois = read.table(file.path(PATH, 'ROIs_22.txt'), header = T)
+#rois = read.table(file.path(PATH, 'ROIs_22.txt'), header = T)
+rois = read.table(file.path(PATH, 'Cradd_additional_labels.txt'), header = T) # new labels
 map  = read.table(file.path(PATH, 'Cradd_AAL_mapping.txt'), header = T)
 
 idx = which(HCvsSD$Pvals_FDR05 < 0.05, arr.ind = T)
@@ -731,8 +732,10 @@ write(edgesSD, file=file.path(PATH, 'SDedges.txt'), ncolumns = 1)
 # map craddock numbers to AAL labels
 resultSD = array(character(nrow(edgesSD)*2), c(nrow(edgesSD),2))
 for (i in 1:nrow(edgesSD)) {
-  resultSD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesSD[i,1], map$crad)]]),
-                   as.character(rois$AAL_Name[map$aal[match(edgesSD[i,2], map$crad)]]))
+  resultSD[i,] = c(as.character(rois$label[match(edgesSD[i,1], rois$roinr)]),
+                   as.character(rois$label[match(edgesSD[i,2], rois$roinr)]))
+  #resultSD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesSD[i,1], map$crad)]]),
+  #                 as.character(rois$AAL_Name[map$aal[match(edgesSD[i,2], map$crad)]]))
 }
 print(cbind(resultSD[orderSD,], sprintf('%.2f',tvalues[orderSD])))
 ```
@@ -749,8 +752,10 @@ write(edgesAD, file=file.path(PATH, 'ADedges.txt'), ncolumns = 1)
 # map craddock numbers to AAL labels
 resultAD = array(character(nrow(edgesAD)*2), c(nrow(edgesAD),2))
 for (i in 1:nrow(edgesAD)) {
-  resultAD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesAD[i,1], map$crad)]]),
-                 as.character(rois$AAL_Name[map$aal[match(edgesAD[i,2], map$crad)]]))
+  resultAD[i,] = c(as.character(rois$label[match(edgesAD[i,1], rois$roinr)]),
+                   as.character(rois$label[match(edgesAD[i,2], rois$roinr)]))
+  #resultAD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesAD[i,1], map$crad)]]),
+  #               as.character(rois$AAL_Name[map$aal[match(edgesAD[i,2], map$crad)]]))
 }
 print(cbind(resultAD[orderAD,], sprintf('%.2f',tvalues[orderAD])))
 ```
@@ -771,7 +776,7 @@ for (i in 1:nrow(edgesSD)) {
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
     geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) + 
     geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
-    ggtitle(sprintf('%s %d\n%s %d', resultSD[i,1], edgesSD[i,1], resultSD[i,2], edgesSD[i,2])) +
+    ggtitle(sprintf('%d<->%d', edgesSD[i,1], edgesSD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
@@ -798,7 +803,7 @@ for (i in 1:nrow(edgesAD)) {
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
     geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) + 
     geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
-    ggtitle(sprintf('%s %d\n%s %d', resultAD[i,1], edgesAD[i,1], resultAD[i,2], edgesAD[i,2])) +
+    ggtitle(sprintf('%d<->%d', edgesAD[i,1], edgesAD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
@@ -810,9 +815,6 @@ plot_grid(p[[1]], p[[2]], ncol = 2, nrow = 1)
 ## Significant edges
 ### HC > SD
 ```{r Significant edges HC vs SD perm}
-rois = read.table(file.path(PATH, 'ROIs_22.txt'), header = T)
-map  = read.table(file.path(PATH, 'Cradd_AAL_mapping.txt'), header = T)
-
 idx = which(HCvsSD$perm.Pvals_FDR05 < 0.062, arr.ind = T)
 tvalues = HCvsSD$perm.Svals_FDR05[idx]
 orderSD = order(tvalues, decreasing = T)
@@ -823,8 +825,10 @@ write(edgesSD, file=file.path(PATH, 'SDedges_perm.txt'), ncolumns = 1)
 # map craddock numbers to AAL labels
 resultSD = array(character(nrow(edgesSD)*2), c(nrow(edgesSD),2))
 for (i in 1:nrow(edgesSD)) {
-  resultSD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesSD[i,1], map$crad)]]),
-                   as.character(rois$AAL_Name[map$aal[match(edgesSD[i,2], map$crad)]]))
+  resultSD[i,] = c(as.character(rois$label[match(edgesSD[i,1], rois$roinr)]),
+                   as.character(rois$label[match(edgesSD[i,2], rois$roinr)]))
+  #resultSD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesSD[i,1], map$crad)]]),
+  #                 as.character(rois$AAL_Name[map$aal[match(edgesSD[i,2], map$crad)]]))
 }
 print(cbind(resultSD[orderSD,], sprintf('%.2f',tvalues[orderSD])))
 ```
@@ -841,8 +845,10 @@ write(edgesAD, file=file.path(PATH, 'ADedges_perm.txt'), ncolumns = 1)
 # map craddock numbers to AAL labels
 resultAD = array(character(nrow(edgesAD)*2), c(nrow(edgesAD),2))
 for (i in 1:nrow(edgesAD)) {
-  resultAD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesAD[i,1], map$crad)]]),
-                 as.character(rois$AAL_Name[map$aal[match(edgesAD[i,2], map$crad)]]))
+  resultAD[i,] = c(as.character(rois$label[match(edgesAD[i,1], rois$roinr)]),
+                   as.character(rois$label[match(edgesAD[i,2], rois$roinr)]))
+  #resultAD[i,] = c(as.character(rois$AAL_Name[map$aal[match(edgesAD[i,1], map$crad)]]),
+  #               as.character(rois$AAL_Name[map$aal[match(edgesAD[i,2], map$crad)]]))
 }
 print(cbind(resultAD[orderAD,], sprintf('%.2f',tvalues[orderAD])))
 ```
@@ -863,7 +869,7 @@ for (i in 1:nrow(edgesSD)) {
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
     geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) +
     geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
-    ggtitle(sprintf('%s %d\n%s %d', resultSD[i,1], edgesSD[i,1], resultSD[i,2], edgesSD[i,2])) +
+    ggtitle(sprintf('%d<->%d', edgesSD[i,1], edgesSD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
@@ -890,7 +896,7 @@ for (i in 1:nrow(edgesAD)) {
   p[[i]]= ggplot(d, aes(x=group, y=z)) + geom_violin() + geom_boxplot(width=0.4) +
     geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0.0002)) + 
     geom_line(aes(x=as.numeric(group), y=med), size=0.3) + coord_cartesian(ylim = c(-0.5, 1)) +
-    ggtitle(sprintf('%s %d\n%s %d', resultAD[i,1], edgesAD[i,1], resultAD[i,2], edgesAD[i,2])) +
+    ggtitle(sprintf('%d<->%d', edgesAD[i,1], edgesAD[i,2])) +
     theme(plot.title = element_text(size=10, face = "plain"))
 }
 
