@@ -409,9 +409,35 @@ plot_grid(plotlist = p, ncol = 4, nrow = 4)
 ggsave(path = PATH_FIGS, "Z-plot.png")
 ```
 
+### Post-hoc tests
+```{r}
+table_posthoc = array(NA, dim=c(3, nrow(edges)))
+
+for (i in 1:nrow(edges)) {
+  y = Z[edges[i,][1], edges[i,][2], infos$included]
+  d = data.frame(Z=y, group=infos$group[infos$included])
+  fit = aov(Z ~ group, data = d)
+  res=TukeyHSD(fit)
+  table_posthoc[,i] = res$group[,4]
+}
+colnames(table_posthoc) = 1:nrow(edges)
+rownames(table_posthoc) = c("HC-AD", "SD-AD", "SD-HC")
+print(round(table_posthoc, digits = 3))
+```
+
+Number of significant edges per group contrast
+```{r}
+apply(table_posthoc < 0.05, 1, sum)
+```
+
 ### Percentage of neg. correlations across 13 sign. edges and subjects
 ```{r}
-sum(R[edges[,1], edges[,2], infos$included] < 0)/(nrow(edges)*nrow(edges)*sum(infos$included))
+Z13 = array(NA, dim=c(sum(infos$included), nrow(edges)))
+
+for (i in 1:nrow(edges)) {
+  Z13[,i] = Z[edges[i,][1], edges[i,][2], infos$included]
+}
+sum(Z13 < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
 ```
 
 ## Plot FC as chord diagram
@@ -536,4 +562,3 @@ colnames(m) = 1:4
 
 chordDiagram(m, directional = TRUE, transparency = 0.5)
 ```
-
