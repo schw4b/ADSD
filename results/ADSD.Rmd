@@ -246,7 +246,7 @@ Rd = data.frame(R = c(c(R[,,infos$isSD]), c(R[,,infos$isAD]), c(R[,,infos$isHC])
 Rd$group = factor(Rd$group, levels = c("HC", "SD", "AD"))
 
 Rd_gsr = data.frame(R = c(c(R_gsr[,,infos$isSD]), c(R_gsr[,,infos$isAD]), c(R_gsr[,,infos$isHC])), group = g)
-Rd_gsr$group = factor(Rd_gsr$group, levels = c("SD", "HC", "AD"))
+Rd_gsr$group = factor(Rd_gsr$group, levels = c("AD", "HC", "SD"))
 
 Rd_ar1 = data.frame(R = c(c(R_ar1[,,infos$isSD]), c(R_ar1[,,infos$isAD]), c(R_ar1[,,infos$isHC])), group = g)
 Rd_ar1$group = factor(Rd_ar1$group, levels = c("AD", "HC", "SD"))
@@ -270,7 +270,7 @@ print(M)
 ```
 
 ### Density plots
-```{r fig.height=2.5, fig.width=7, message=FALSE, warning=FALSE}
+```{r fig.height=5, fig.width=7, message=FALSE, warning=FALSE}
 # p1 = ggplot(Rd,     aes(x=R, fill=group)) + geom_histogram(alpha=0.3, position="identity", binwidth = 0.05) +
 #   ggtitle("raw") + coord_cartesian(ylim = c(0, 10^5)) 
 # p2 = ggplot(Rd_gsr, aes(x=R, fill=group)) + geom_histogram(alpha=0.3, position="identity", binwidth = 0.05) +
@@ -281,16 +281,17 @@ print(M)
 #   ggtitle("AR1")
 
 p1 = ggplot(Rd,      aes(x=R, fill=group)) + geom_density(alpha=0.5) + ggtitle("raw")
-#p2 = ggplot(Rd_gsr,  aes(x=R, fill=group)) + geom_density(alpha=0.3) + ggtitle("GSR")
+p2 = ggplot(Rd_gsr,  aes(x=R, fill=group)) + geom_density(alpha=0.5) + ggtitle("GSR")
 p3 = ggplot(Rd_ar1,  aes(x=R, fill=group)) + geom_density(alpha=0.5) + ggtitle("GSR + AR1")
 #p4 = ggplot(Rd_site, aes(x=R, fill=site))  + geom_density(alpha=0.3) + ggtitle("AR1")
 
-plot_grid(p1, p3, ncol = 2, nrow = 1)
+plot_grid(p1, p2, p3, ncol = 2, nrow = 2)
 ```
 
 ## Fisher z-transformation
 ```{r}
-Z = 0.5*(log(1+R_ar1) - log(1-R_ar1))
+Z = 0.5*(log(1+R_gsr) - log(1-R_gsr))
+# Z = 0.5*(log(1+R_ar1) - log(1-R_ar1))
 # Z = 0.5*log((1+R_ar1)/(1-R_ar1))
 # Z = atanh(R_ar1)
 ```
@@ -304,43 +305,43 @@ Nn = length(rois)
 
 ## Voxel-wise ANOVA
 ```{r}
-# set.seed(1980)
-# anova=list()
-# anova$groupFvals = array(NA, dim=c(Nn, Nn))
-# anova$groupPvals = array(NA, dim=c(Nn, Nn))
-# anova$ageFvals = array(NA, dim=c(Nn, Nn))
-# anova$agePvals = array(NA, dim=c(Nn, Nn))
-# 
-# anova$perm.Pvals = array(NA, dim=c(Nn, Nn))
-# anova$perm.Stats = array(NA, dim=c(Nn, Nn))
-# 
-# for (i in 1:Nn) {
-#   print(i)
-#   for (j in 1:Nn) {
-#     if (i > j) {
-#       y = Z[rois[i], rois[j], ]
-#       idx = infos$included
-#       # fit = aov(y[idx] ~ infos$group[idx]) # df=2/52
-#       fit = aov(y[idx] ~ infos$group[idx] + infos$age[idx]) # df=2/52
-#       # qqnorm(resid(fit))
-#       # qqline(resid(fit), col="red")
-#       result = summary(fit)
-# 
-#       anova$groupFvals[i,j] = result[[1]]$`F value`[1]
-#       anova$groupPvals[i,j] = result[[1]]$`Pr(>F)`[1]
-# 
-#       anova$ageFvals[i,j] = result[[1]]$`F value`[2]
-#       anova$ageFvals[i,j] = result[[1]]$`Pr(>F)`[2]
-# 
-#       result2 = permKS(y[idx] ~ infos$group[idx])
-# 
-#       anova$perm.Stats[i, j] = result2$statistic # df = 2
-#       anova$perm.Pvals[i, j] = result2$p.value
-#     }
-#   }
-# }
-# 
-# save(anova, file = file.path(PATH_RES, 'anova.RData'))
+set.seed(1980)
+anova=list()
+anova$groupFvals = array(NA, dim=c(Nn, Nn))
+anova$groupPvals = array(NA, dim=c(Nn, Nn))
+anova$ageFvals = array(NA, dim=c(Nn, Nn))
+anova$agePvals = array(NA, dim=c(Nn, Nn))
+
+anova$perm.Pvals = array(NA, dim=c(Nn, Nn))
+anova$perm.Stats = array(NA, dim=c(Nn, Nn))
+
+for (i in 1:Nn) {
+  print(i)
+  for (j in 1:Nn) {
+    if (i > j) {
+      y = Z[rois[i], rois[j], ]
+      idx = infos$included
+      # fit = aov(y[idx] ~ infos$group[idx]) # df=2/52
+      fit = aov(y[idx] ~ infos$group[idx] + infos$age[idx]) # df=2/52
+      # qqnorm(resid(fit))
+      # qqline(resid(fit), col="red")
+      result = summary(fit)
+
+      anova$groupFvals[i,j] = result[[1]]$`F value`[1]
+      anova$groupPvals[i,j] = result[[1]]$`Pr(>F)`[1]
+
+      anova$ageFvals[i,j] = result[[1]]$`F value`[2]
+      anova$ageFvals[i,j] = result[[1]]$`Pr(>F)`[2]
+
+      result2 = permKS(y[idx] ~ infos$group[idx])
+
+      anova$perm.Stats[i, j] = result2$statistic # df = 2
+      anova$perm.Pvals[i, j] = result2$p.value
+    }
+  }
+}
+
+save(anova, file = file.path(PATH_RES, 'anova.RData'))
 ```
 
 ## FDR correction
@@ -465,8 +466,11 @@ See http://zuguang.de/circlize_book/book/advanced-usage-of-chorddiagram.html#com
 
 ```{r}
 # calculate percentage difference in connectivity strenght
-top.gaps   = 9
-bottom.gaps= 10
+
+# check edges and associated no. of gaps and set accordingly.
+# length(unique(c(edges)))-2 # total between gaps minus two big gaps
+top.gaps   = 5
+bottom.gaps= 6
 
 gap.after = c(rep(2, bottom.gaps), 10, rep(2, top.gaps), 10)
 
@@ -543,8 +547,8 @@ grid.raster(img)
 
 ### Compare Z values to graph for correctness
 ```{r}
-i=70; j=37
-i=129; j=11
+
+i=24; j=85
 median(Z[i,j,infos$isSD & infos$included], na.rm=T)
 median(Z[i,j,infos$isAD & infos$included], na.rm=T)
 median(Z[i,j,infos$isHC & infos$included], na.rm=T)
