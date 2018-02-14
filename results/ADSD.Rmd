@@ -1,7 +1,7 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "17 Nov 2017"
+date: "14 Feb 2018"
 output: html_notebook
 ---
 
@@ -618,16 +618,8 @@ Show in New WindowClear OutputExpand/Collapse Output
 [1] -0.06550519
 [1] 0.01263284
 
-### Compare Z values to graph for correctness
-```{r}
 
-i=24; j=85
-median(Z[i,j,infos$isSD & infos$included], na.rm=T)
-median(Z[i,j,infos$isAD & infos$included], na.rm=T)
-median(Z[i,j,infos$isHC & infos$included], na.rm=T)
-```
-
-### Minimal example
+### Minimal example for Chord Diagram
 ```{r eval=FALSE, include=FALSE}
 set.seed(1980)
 m = matrix(0, 4, 4)
