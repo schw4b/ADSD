@@ -381,7 +381,7 @@ resultsTable = array(NA, dim=c(nrow(edges), 6))
 resultsTable[,1:2] = edges
 resultsTable[,3:4] = array(roiLables$label[match(edges, roiLables$roinr)], dim=c(nrow(edges),2))
 resultsTable[,5] = round(anova$groupFvals[idx], digits = 2)
-resultsTable[,6] = round(anova$groupPvalsFDR[idx], digits = 3)
+resultsTable[,6] = round(anova$groupPvalsFDR[idx], digits = 4)
 colnames(resultsTable) = c("ROI", "ROI", "Region", "Region", "F-value", "adj. p-value")
 
 # order table based on significance
@@ -390,7 +390,7 @@ print(resultsTable[ord,])
 ```
 
 ## Plot Z scores
-```{r fig.height=6, fig.width=7, warning=FALSE}
+```{r fig.height=3.5, fig.width=6.5, warning=FALSE}
 set.seed(1980)
 p = list()
 line=data.frame(yintercept=0, cutoff=factor(0))
@@ -406,7 +406,7 @@ for (i in 1:nrow(edges)) {
     ggtitle(sprintf('%d<->%d', edges[i,1], edges[i,2]))
 }
 
-plot_grid(plotlist = p, ncol = 4, nrow = 4)
+plot_grid(plotlist = p, ncol = 4, nrow = 2)
 ggsave(path = PATH_FIGS, "Z-plot.png")
 ```
 
@@ -431,14 +431,24 @@ Number of significant edges per group contrast
 apply(table_posthoc < 0.05, 1, sum)
 ```
 
-### Percentage of neg. correlations across 13 sign. edges and subjects
+### Percentage of neg. correlations across 7 sign. edges and subjects
 ```{r}
-Z13 = array(NA, dim=c(sum(infos$included), nrow(edges)))
+negPrc = array(NA, dim=c(1,3))
 
+Zn = array(NA, dim=c(sum(infos$included), nrow(edges)))
+Rn = array(NA, dim=c(sum(infos$included), nrow(edges)))
+Rn_gsr = array(NA, dim=c(sum(infos$included), nrow(edges)))
 for (i in 1:nrow(edges)) {
-  Z13[,i] = Z[edges[i,][1], edges[i,][2], infos$included]
-}
-sum(Z13 < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
+  Zn[,i] = Z[edges[i,][1], edges[i,][2], infos$included]
+  Rn_gsr[,i] = R_gsr[edges[i,][1], edges[i,][2], infos$included]
+  Rn[,i] = R[edges[i,][1], edges[i,][2], infos$included]
+  }
+
+negPrc[1] = sum(Zn < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
+negPrc[2] = sum(Rn_gsr < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
+negPrc[3] = sum(Rn < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
+colnames(negPrc) = c("Z", "R with GSR", "R")
+print(negPrc)
 ```
 
 ## Plot FC as chord diagram
@@ -449,21 +459,47 @@ sum(Z13 < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
 mask = array(0, dim=c(N_ROIS, N_ROIS))
 mask[edges]=1
 
-M_SD = apply(Z[,,infos$isSD & infos$included], c(1,2), median, na.rm=TRUE)
+# we do not use Z values for the chord diagram because these can be negative
+M_SD = apply(R_gsr[,,infos$isSD & infos$included], c(1,2), mean, na.rm=TRUE)
 M_SD[!mask]=NA
 
-M_AD = apply(Z[,,infos$isAD & infos$included], c(1,2), median, na.rm=TRUE)
+M_AD = apply(R_gsr[,,infos$isAD & infos$included], c(1,2), mean, na.rm=TRUE)
 M_AD[!mask]=NA
 
-M_HC = apply(Z[,,infos$isHC & infos$included], c(1,2), median, na.rm=TRUE)
+M_HC = apply(R_gsr[,,infos$isHC & infos$included], c(1,2), mean, na.rm=TRUE)
 M_HC[!mask]=NA
+
+# insert row/column labels to 200x200 matrix and order array to separate left and right nodes
+mylabs = as.character(1:200)
+mylabs[roiLables[,1]] = as.character(roiLables[,4])
+ind=order(mylabs)
+mylabs=mylabs[ind]
+
+M_SD_ = M_SD[ind,ind]
+M_AD_ = M_AD[ind,ind]
+M_HC_ = M_HC[ind,ind]
+
+rownames(M_SD_) = mylabs
+colnames(M_SD_) = mylabs
+
+rownames(M_AD_) = mylabs
+colnames(M_AD_) = mylabs
+
+rownames(M_HC_) = mylabs
+colnames(M_HC_) = mylabs
+```
+
+### Show mean connection strengths
+```{r}
+x=rbind(M_SD[edges], M_AD[edges], M_HC[edges])
+rownames(x) = c("SD", "AD","HC")
+print(x)
 ```
 
 ### Scaling to make chord diagrams comparable between groups
 If not taken care of, link strenghts are relative values.
 
 See http://zuguang.de/circlize_book/book/advanced-usage-of-chorddiagram.html#compare-two-chord-diagrams
-
 ```{r}
 # calculate percentage difference in connectivity strenght
 
@@ -472,70 +508,99 @@ See http://zuguang.de/circlize_book/book/advanced-usage-of-chorddiagram.html#com
 top.gaps   = 5
 bottom.gaps= 6
 
-gap.after = c(rep(2, bottom.gaps), 10, rep(2, top.gaps), 10)
+small.gap = 2
+big.gap = 10
+gap.after = c(rep(small.gap, bottom.gaps), big.gap, rep(small.gap, top.gaps), big.gap)
 
+# scaling factors p
 p1=sum(abs(M_SD), na.rm = T) / sum(abs(M_HC), na.rm = T)
 p2=sum(abs(M_AD), na.rm = T) / sum(abs(M_HC), na.rm = T)
 
-# calculate blank degree and big gap degree
-blank.deg1 = (360 - sum(gap.after)) * (1 - p1)
-blank.deg2 = (360 - sum(gap.after)) * (1 - p2)
+#      sector   gaps  big gap (2) small gaps (11)  (counts)
+# HC   285       75      10           5            degree
+# SD   156      204      74           5
+# AD   260      100      22           5
 
-big.gap1 = (blank.deg1 - 2*(bottom.gaps+top.gaps))/2
-big.gap2 = (blank.deg2 - 2*(bottom.gaps+top.gaps))/2
+# calculate total blank degree and big gap degree
+blank.deg = sum(gap.after)
+blank.deg1 = 360-(360 - blank.deg)*p1
+blank.deg2 = 360-(360 - blank.deg)*p2
 
-gap.after1 = c(rep(2, bottom.gaps), big.gap1, rep(2, top.gaps), big.gap1)
-gap.after2 = c(rep(2, bottom.gaps), big.gap2, rep(2, top.gaps), big.gap2)
+gap1 = blank.deg1/length(gap.after)
+gap2 = blank.deg2/length(gap.after)
+
+#gap.after1 = rep(gap1, length(gap.after))
+#gap.after2 = rep(gap2, length(gap.after))
+
+big.gap1 = (blank.deg1 - small.gap*(bottom.gaps+top.gaps))/2
+big.gap2 = (blank.deg2 - small.gap*(bottom.gaps+top.gaps))/2
+
+gap.after1 = c(rep(small.gap, bottom.gaps), big.gap1, rep(small.gap, top.gaps), big.gap1)
+gap.after2 = c(rep(small.gap, bottom.gaps), big.gap2, rep(small.gap, top.gaps), big.gap2)
+```
+
+### Create colormap
+```{r}
+#set.seed(1980)
+# global colormaps
+col_map = colorRamp2(c(-0.4, 0, 0.4), c("blue", "white", "red"), transparency = 0.3)
 ```
 
 ### chord diagram
-```{r fig.height=8, fig.width=8}
+```{r fig.height=6, fig.width=6}
 # save figure
 png(filename=file.path(PATH_FIGS, 'network.png'), width=8, height=8, units = 'in', res=300)
 
 par(mfrow=c(2,2), "mar"=c(0, 0, 1, 0))
 # all 200 x 200 rois, then apply mask
+
 set.seed(1980)
-M_SD = apply(Z[,,infos$isSD & infos$included], c(1,2), median, na.rm=TRUE)
-M_SD[!mask]=NA
-circos.par(gap.after = gap.after1, start.degree = -big.gap1/2)
-chordDiagram(M_SD, directional = FALSE, transparency = 0.5,  annotationTrack = "grid",
-             preAllocateTracks = 1)
+circos.par(gap.after = gap.after1, start.degree = -big.gap1/2-90)
+chordDiagram(M_SD_, directional = FALSE, transparency = 0.5,  annotationTrack = "grid",
+             preAllocateTracks = 1, col = col_map, link.lwd = 0.5, link.lty = 1, link.border = "gray")
 circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
   xlim = get.cell.meta.data("xlim")
   ylim = get.cell.meta.data("ylim")
   sector.name = get.cell.meta.data("sector.index")
-  circos.text(mean(xlim), ylim[1] + .1, sector.name, facing = "clockwise",
-              niceFacing = TRUE, adj = c(0, 0.5), col = "black", cex = 1)
+  circos.text(mean(xlim), ylim[1] + .1, sector.name, facing = "clockwise", adj = c(0.1,0.5),
+              niceFacing = TRUE, col = "black", cex = 0.9)
 }, bg.border = NA)
 circos.clear()
 title("Semantic dementia (SD)")
 
 set.seed(1980)
-circos.par(gap.after = gap.after2, start.degree = -big.gap2/2)
-chordDiagram(M_AD, directional = F, transparency = 0.5,  annotationTrack = "grid",
-             preAllocateTracks = 1)
+circos.par(gap.after = gap.after2, start.degree = -big.gap2/2-90)
+chordDiagram(M_AD_, directional = F, transparency = 0.5,  annotationTrack = "grid",
+             preAllocateTracks = 1, col = col_map, link.lwd = 0.5, link.lty = 1, link.border = "gray")
 circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
   xlim = get.cell.meta.data("xlim")
   ylim = get.cell.meta.data("ylim")
   sector.name = get.cell.meta.data("sector.index")
-  circos.text(mean(xlim), ylim[1] + .1, sector.name, facing = "clockwise",
-              niceFacing = TRUE, adj = c(0, 0.5), col = "black")
+  circos.text(mean(xlim), ylim[1] + .1, sector.name, facing = "clockwise", adj = c(0.1,0.5),
+              niceFacing = TRUE, col = "black", cex = 0.9)
 }, bg.border = NA)
 circos.clear()
 title("Alzheimer's disease (AD)")
 
 set.seed(1980)
-circos.par(gap.after = gap.after, start.degree = -10/2)
-chordDiagram(M_HC, directional = F, transparency = 0.5,  annotationTrack = "grid",
-             preAllocateTracks = 1)
+circos.par(gap.after = gap.after, start.degree = -big.gap/2-90)
+chordDiagram(M_HC_, directional = F, transparency = 0.5,  annotationTrack = "grid",
+             preAllocateTracks = 1, col = col_map, link.lwd = 0.5, link.lty = 1, link.border = "gray")
 circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
   xlim = get.cell.meta.data("xlim")
   ylim = get.cell.meta.data("ylim")
   sector.name = get.cell.meta.data("sector.index")
-  circos.text(mean(xlim), ylim[1] + .1, sector.name, facing = "clockwise",
-              niceFacing = TRUE, adj = c(0, 0.5), col = "black")
+  circos.text(mean(xlim), ylim[1] + .1, sector.name, facing = "clockwise", adj = c(0.1,0.5),
+              niceFacing = TRUE, col = "black", cex = 0.9)
 }, bg.border = NA)
+text(0.4,0.3,"3")
+text(0.1,0.4,"6")
+text(-0.2,0.4,"1")
+text(-0.02,0,"2")
+text(-0.45,0.3,"4")
+text(-0.55,-0.05,"5")
+text(-0.5,-0.2,"7")
+
 circos.clear()
 title("Healthy elderly controls (HC)")
 
@@ -544,6 +609,14 @@ dev.off()
 img <- readPNG(file.path(PATH_FIGS, "network.png"))
 grid.raster(img)
 ```
+Show in New WindowClear OutputExpand/Collapse Output
+[1] 0.1601138
+[1] -0.06550519
+[1] 0.01263284
+Show in New WindowClear OutputExpand/Collapse Output
+[1] 0.1601138
+[1] -0.06550519
+[1] 0.01263284
 
 ### Compare Z values to graph for correctness
 ```{r}
