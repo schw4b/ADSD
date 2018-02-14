@@ -406,7 +406,7 @@ for (i in 1:nrow(edges)) {
     ggtitle(sprintf('%d<->%d', edges[i,1], edges[i,2]))
 }
 
-plot_grid(plotlist = p, ncol = 4, nrow = 2)
+plot_grid(plotlist = p, ncol = 4, nrow = 2, labels = c("1", "2", "3", "4", "5", "6", "7"))
 ggsave(path = PATH_FIGS, "Z-plot.png")
 ```
 
