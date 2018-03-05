@@ -1,7 +1,7 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "14 Feb 2018"
+date: "05 Mar 2018"
 output: html_notebook
 ---
 
@@ -30,7 +30,7 @@ library(cowplot)
 library(Hmisc) # for rcor
 library(nortest)
 library(lme4)
-library(multdyn)
+library(DGM)
 library(moments)
 library(perm)
 library(circlize)
@@ -59,9 +59,9 @@ infos$included = rep(TRUE,N)
 # DVARS; more than 20% volumes affected:
 infos$included[match("ADSD_13", infos$id)] = FALSE
 infos$included[match("ADSD_36", infos$id)] = FALSE
-# High E-vars:
+# High E-vars: maybe include
 infos$included[match("ADSD_34", infos$id)] = FALSE
-# DVARS below 40%:
+# D-Var below 40% ie lots of autocorrelation due to physiology:
 infos$included[match("ADSD_15", infos$id)] = FALSE
 infos$included[match("ADSD_42", infos$id)] = FALSE
 infos$included[match("ADSD_43", infos$id)] = FALSE
@@ -91,6 +91,17 @@ rm(dvars)
 
 print(infos)
 ```
+
+## Exclusions
+```{r}
+print(infos$id[!infos$included])
+summary(infos$group[!infos$included])
+
+# percentage excluded
+sum(!infos$included)/N
+```
+
+
 ## Demographics
 ```{r Demographics}
 d.demog = data.frame(Group=as.factor(c('SD', 'AD', 'HC')),
@@ -120,16 +131,16 @@ rm(a); rm(b)
 print(as.character(infos$id[rowSums(affected) > infos$N_vols*0.2]))
 
 # lillie.test(infos$SD_SDVARS_X2)
-kruskal.test(SD_SDVARS_X2 ~ group, data=infos)
+summary(aov(SD_SDVARS_X2 ~ group, data=infos))
 
 # lillie.test(infos$g_Avar)
-kruskal.test(g_Avar ~ group, data=infos)
+summary(aov(g_Avar ~ group, data=infos))
 
 # DVARS after excluding subjects
 infos_ = subset(infos, included)
 
-kruskal.test(SD_SDVARS_X2 ~ group, data=infos_)
-kruskal.test(g_Avar ~ group, data=infos_)
+summary(aov(SD_SDVARS_X2 ~ group, data=infos_))
+summary(aov(g_Avar ~ group, data=infos_))
 ```
 ### Plot
 ```{r, fig.height=2, fig.width=4}
@@ -211,36 +222,103 @@ plot_grid(p1, p2, p3, p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
 # rm(f1); rm(f2)
 # assert(length(f) == N)
 # 
-# R = R_gsr = R_ar1 = array(NA, dim=c(N_ROIS, N_ROIS, N))
-# P_ar1 = array(NA, dim=c(N_ROIS, N_ROIS, N))
+# R     = array(NA, dim=c(N_ROIS, N_ROIS, N))
+# R_gsr = array(NA, dim=c(N_ROIS, N_ROIS, N))
+# R_ar1 = array(NA, dim=c(N_ROIS, N_ROIS, N))
+# 
+# ts_    = list()
+# ts_gsr = list()
+# 
 # for (s in 1:N) {
-#   
+#   print(s)
 #   d = as.matrix(read.table(file.path(PATH_ROIS200, f[s]), header = F))
 #   #acf(d[,50]) # check autocorrelation
+#   ts_[[s]] = d
 #   tmp =  rcorr(d, type="pearson")
 #   R[,,s] = tmp$r
-#   
+# 
 #   d = as.matrix(read.table(file.path(PATH_ROIS200_GSR, f[s]), header = F))
+#   ts_gsr[[s]] = d
 #   tmp =  rcorr(d, type="pearson")
 #   R_gsr[,,s] = tmp$r
-#   
+# 
 #   d = as.matrix(read.table(file.path(PATH_ROIS200_GSR_AR1, f[s]), header = F))
 #   tmp =  rcorr(d, type="pearson")
 #   R_ar1[,,s] = tmp$r
-#   P_ar1[,,s] = tmp$P
 # }
-# save(R, R_gsr, R_ar1, P_ar1, file = file.path(PATH_RES, 'ADSD.RData'))
-
+# save(R, R_gsr, R_ar1, ts_, ts_gsr, file = file.path(PATH_RES, 'ADSD.RData'))
+# 
 load(file.path(PATH_RES, 'ADSD.RData'))
 ```
 
-### Compare distributions of Pearson's r
+Subjects excluded
+```{r}
+print(subset(infos, !infos$included))
+```
+
+## Load ROIs of temporal regions
+```{r Load ROIs}
+rois=as.matrix(read.table(file.path(PATH_RES, 'Cradd_tmp_labels.txt'), header = F))
+rois=rois[1,]
+Nn = length(rois)
+```
+
+## Looking at mean variance across nodes
+```{r}
+node.var = rep(NA, N)
+
+for (s in 1:N) {
+  node.var[s] = mean(apply(ts_[[s]][,rois], 2, sd), na.rm=T)
+}
+
+infos$node.var = node.var
+infos$large.var = node.var > 1
+```
+
+Subjects included with large node variance
+```{r}
+print(subset(infos, infos$large.var & infos$included))
+```
+
+## Plot time series
+* First two subjects have lowest framewise displacement (01 and 2001)
+* Next 6 subjects have been excluded based on DVARS
+* Last 5 subejcts are "worst" subjects in terms of node variance that are included
+```{r, fig.height=20, fig.width=16}
+idx = 1:200 # interval to plot
+nodes = sample(rois, 5) # selection of nodes to plot
+#n = sample(which(infos$included), 10) # selection of subjects to plot
+n = c(1, 45, which(!infos$included), which(infos$large.var & infos$included))
+
+p = list()
+
+for (s in 1:length(n)) {
+  x = ts_[[n[s]]][,nodes]
+  offset = t(array(rep(seq(-4,4,2),nrow(x)), dim=c(5,nrow(x))))
+  p[[s]] = ggplot(melt(x+offset), aes(x = Var1, y = value, group=Var2, color=Var2)) + geom_line() + theme_minimal() +
+    ggtitle(sprintf('%s',infos$id[n[s]])) + ylim(c(-7, 7))
+  
+  
+  x = ts_gsr[[n[s]]][,nodes]
+  offset = t(array(rep(seq(-4,4,2),nrow(x)), dim=c(5,nrow(x))))
+  p[[s+length(n)]] = ggplot(melt(x+offset), aes(x = Var1, y = value, group=Var2, color=Var2)) + geom_line() + theme_minimal() +
+    ggtitle(sprintf('%s',infos$id[n[s]])) + ylim(c(-7, 7))
+}
+
+# resorting plots
+a=1:(length(n)*2)
+x=c(t(matrix(t(a), length(n), 2)))
+
+plot_grid(plotlist = p[x], ncol = 2, nrow = 14, rel_widths = c(1, 1), 
+          labels = c("Without global signal regressionm (GRS)", "                            with GRS"))
+```
+
+## Compare distributions of Pearson's r
 ```{r}
 g = c(rep('SD', N_ROIS*N_ROIS*sum(infos$isSD)),
       rep('AD', N_ROIS*N_ROIS*sum(infos$isAD)),
       rep('HC', N_ROIS*N_ROIS*sum(infos$isHC))
 )
-
 
 Rd = data.frame(R = c(c(R[,,infos$isSD]), c(R[,,infos$isAD]), c(R[,,infos$isHC])), group = g)
 Rd$group = factor(Rd$group, levels = c("HC", "SD", "AD"))
@@ -296,13 +374,6 @@ Z = 0.5*(log(1+R_gsr) - log(1-R_gsr))
 # Z = atanh(R_ar1)
 ```
 
-## Load ROIs of temporal regions
-```{r Load ROIs}
-rois=as.matrix(read.table(file.path(PATH_RES, 'Cradd_tmp_labels.txt'), header = F))
-rois=rois[1,]
-Nn = length(rois)
-```
-
 ## Voxel-wise ANOVA
 ```{r}
 set.seed(1980)
@@ -316,7 +387,7 @@ anova$perm.Pvals = array(NA, dim=c(Nn, Nn))
 anova$perm.Stats = array(NA, dim=c(Nn, Nn))
 
 for (i in 1:Nn) {
-  print(i)
+  #print(i)
   for (j in 1:Nn) {
     if (i > j) {
       y = Z[rois[i], rois[j], ]
