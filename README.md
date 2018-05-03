@@ -1,4 +1,4 @@
-# ADSD-nbook
+# ADSD data analysis
 
-## R Notebooks
-- [Results](https://rawgit.com/schw4b/ADSD/master/results/ADSD.nb.html)
+## R Notebooks with results and figures
+- [ADSD functional connectivity analysis](https://rawgit.com/schw4b/ADSD/master/results/ADSD.nb.html)

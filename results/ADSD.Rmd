@@ -14,11 +14,11 @@ output: html_notebook
 # install.packages("cowplot")
 # install.packages("Hmisc")
 # install.packages("nortest")
-# install.packages("multdyn")
 # install.packages("perm")
 # install.packages("lme4")
 # install.packages("moments")
 # install.packages("circlize")
+# install.packages("png")
 ```
 
 ## Load libraries
@@ -30,11 +30,10 @@ library(cowplot)
 library(Hmisc) # for rcor
 library(nortest)
 library(lme4)
-library(DGM)
-library(moments)
-library(perm)
-library(circlize)
+#library(moments)
+#library(perm)
 library(grid)
+library(circlize)
 library(png)
 ```
 
@@ -284,8 +283,9 @@ print(subset(infos, infos$large.var & infos$included))
 * First two subjects have lowest framewise displacement (01 and 2001)
 * Next 6 subjects have been excluded based on DVARS
 * Last 5 subejcts are "worst" subjects in terms of node variance that are included
-```{r, fig.height=20, fig.width=16}
+```{r fig.height=20, fig.width=16}
 idx = 1:200 # interval to plot
+set.seed(1980)
 nodes = sample(rois, 5) # selection of nodes to plot
 #n = sample(which(infos$included), 10) # selection of subjects to plot
 n = c(1, 45, which(!infos$included), which(infos$large.var & infos$included))
@@ -404,10 +404,9 @@ for (i in 1:Nn) {
       anova$ageFvals[i,j] = result[[1]]$`F value`[2]
       anova$ageFvals[i,j] = result[[1]]$`Pr(>F)`[2]
 
-      result2 = permKS(y[idx] ~ infos$group[idx])
-
-      anova$perm.Stats[i, j] = result2$statistic # df = 2
-      anova$perm.Pvals[i, j] = result2$p.value
+      # result2 = permKS(y[idx] ~ infos$group[idx])
+      # anova$perm.Stats[i, j] = result2$statistic # df = 2
+      # anova$perm.Pvals[i, j] = result2$p.value
     }
   }
 }
@@ -447,41 +446,21 @@ unique(sort(edges))
 ## Result Table
 ```{r}
 roiLables = read.table(file.path(PATH_RES, 'Cradd_additional_labels.txt'), header = T)
-resultsTable = array(NA, dim=c(nrow(edges), 6))
+resultsTable = array(NA, dim=c(nrow(edges), 8))
 
 resultsTable[,1:2] = edges
 resultsTable[,3:4] = array(roiLables$label[match(edges, roiLables$roinr)], dim=c(nrow(edges),2))
 resultsTable[,5] = round(anova$groupFvals[idx], digits = 2)
 resultsTable[,6] = round(anova$groupPvalsFDR[idx], digits = 4)
-colnames(resultsTable) = c("ROI", "ROI", "Region", "Region", "F-value", "adj. p-value")
+resultsTable[,7:8] = array(roiLables$abbrev2[match(edges, roiLables$roinr)], dim=c(nrow(edges),2))
+colnames(resultsTable) = c("ROI", "ROI", "Region", "Region", "F-value", "adj. p-value", "Abb.", "Abb.")
 
 # order table based on significance
 ord = order(anova$groupFvals[idx], decreasing = T)
 print(resultsTable[ord,])
 ```
 
-## Plot Z scores
-```{r fig.height=3.5, fig.width=6.5, warning=FALSE}
-set.seed(1980)
-p = list()
-line=data.frame(yintercept=0, cutoff=factor(0))
-for (i in 1:nrow(edges)) {
-  x = Z[edges[i,][1],edges[i,][2],]
-  d = data.frame(Z = x[infos$included], group=infos$group[infos$included])
-  d$group = factor(d$group, c("SD", "AD", "HC"))
-  p[[i]]= ggplot(d, aes(x=group, y=Z, color=group)) + geom_violin(color="gray50") + geom_boxplot(width=0.7) +
-    geom_point(shape=1, color="gray80", size=1, position = position_jitter(width = 0.2, height = 0)) + 
-    # coord_cartesian(ylim = c(-0.5, 1)) +
-    geom_hline(aes(yintercept=0), colour="#990000", linetype="dashed") +
-    theme(plot.title = element_text(size=10, face = "plain"), legend.position="none") +
-    ggtitle(sprintf('%d<->%d', edges[i,1], edges[i,2]))
-}
-
-plot_grid(plotlist = p, ncol = 4, nrow = 2, labels = c("1", "2", "3", "4", "5", "6", "7"))
-ggsave(path = PATH_FIGS, "Z-plot.png")
-```
-
-### Post-hoc tests
+## Post-hoc tests
 ```{r}
 table_posthoc = array(NA, dim=c(3, nrow(edges)))
 
@@ -495,12 +474,54 @@ for (i in 1:nrow(edges)) {
 colnames(table_posthoc) = 1:nrow(edges)
 rownames(table_posthoc) = c("HC-AD", "SD-AD", "SD-HC")
 print(round(table_posthoc, digits = 3))
-```
+```set.see
 
 Number of significant edges per group contrast
 ```{r}
 apply(table_posthoc < 0.05, 1, sum)
 ```
+
+## Plot Z scores
+```{r fig.height=4, fig.width=6.5, message=FALSE, warning=FALSE}
+set.seed(1980)
+p = list()
+line=data.frame(yintercept=0, cutoff=factor(0))
+
+scaleFUN <- function(x) sprintf("%.1f", x)
+
+for (i in 1:nrow(edges)) {
+  x = Z[edges[i,][1],edges[i,][2],]
+  d = data.frame(Z = x[infos$included], group=infos$group[infos$included])
+  d$group = factor(d$group, c("SD", "AD", "HC"))
+  p[[i]]= ggplot(d, aes(x=group, y=Z, color=group)) + geom_boxplot(width=0.7) +
+    geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0)) + 
+    coord_cartesian(ylim = c(-0.8, 1.5)) +
+    #geom_hline(aes(yintercept=0), colour="#990000", linetype="dashed") +
+    scale_y_continuous(labels=scaleFUN) +
+    theme(axis.text = element_text(size=10), plot.title = element_text(size=9, face = "plain"), 
+          legend.position="none", axis.title.x=element_blank(),
+          panel.grid.major = element_line(size = 0.4, linetype = "dashed" , colour = "gray70")) + 
+    #ggtitle(sprintf('%d<->%d', edges[i,1], edges[i,2]))
+    
+    # display significances
+    ggtitle(sprintf('edge no. %d\n %s \U2194 %s', i, resultsTable[i, 7], resultsTable[i, 8]))
+    
+   
+  if (table_posthoc[1,i] < .05) {
+    p[[i]] = p[[i]] + geom_segment(aes(x = 2, y = 1.6, xend = 3, yend = 1.6), col = "red", size = 0.3)
+    }
+  if (table_posthoc[2,i] < .05) {
+    p[[i]] = p[[i]] + geom_segment(aes(x = 1, y = 1.5, xend = 2, yend = 1.5), col = "red", size = 0.3)
+  } 
+  if (table_posthoc[3,i] < .05) {
+    p[[i]] = p[[i]] + geom_segment(aes(x = 1, y = 1.4, xend = 3, yend = 1.4), col = "red", size = 0.3)
+  }
+}
+
+plot_grid(plotlist = p, ncol = 4, nrow = 2) #labels = c("1", "2", "3", "4", "5", "6", "7"))
+ggsave(path = PATH_FIGS, "Z-plot.png")
+```
+
 
 ### Percentage of neg. correlations across 7 sign. edges and subjects
 ```{r}
@@ -637,7 +658,7 @@ circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
               niceFacing = TRUE, col = "black", cex = 0.9)
 }, bg.border = NA)
 circos.clear()
-title("Semantic dementia (SD)")
+title("Semantic dementia (SD)", cex.main=1.5, font.main=1)
 
 set.seed(1980)
 circos.par(gap.after = gap.after2, start.degree = -big.gap2/2-90)
@@ -651,7 +672,7 @@ circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
               niceFacing = TRUE, col = "black", cex = 0.9)
 }, bg.border = NA)
 circos.clear()
-title("Alzheimer's disease (AD)")
+title("Alzheimer's disease (AD)", cex.main=1.5, font.main=1)
 
 set.seed(1980)
 circos.par(gap.after = gap.after, start.degree = -big.gap/2-90)
@@ -673,9 +694,9 @@ text(-0.55,-0.05,"5")
 text(-0.5,-0.2,"7")
 
 circos.clear()
-title("Healthy elderly controls (HC)")
+title("Healthy elderly controls (HC)", cex.main=1.5, font.main=1)
 
-dev.off()
+dev.off() 
 
 img <- readPNG(file.path(PATH_FIGS, "network.png"))
 grid.raster(img)
