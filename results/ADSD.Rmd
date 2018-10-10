@@ -1,7 +1,7 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "03 May 2018"
+date: "09 Oct 2018"
 output: html_notebook
 ---
 
@@ -23,11 +23,11 @@ output: html_notebook
 
 ## Load libraries
 ```{r Load libraries, message=FALSE, warning=TRUE}
-library(testit)
+#library(testit)
 library(reshape2)
 library(ggplot2)
 library(cowplot)
-library(Hmisc) # for rcor
+#library(Hmisc) # for rcor
 library(nortest)
 library(lme4)
 #library(moments)
@@ -35,13 +35,16 @@ library(lme4)
 library(grid)
 library(circlize)
 library(png)
+library(knitr)
+library(foreign)
+library(biostatUZH)
 ```
 
 ## Main variables
 ```{r Main variables}
 N = 62
 N_ROIS = 200
-PATH_HOME = "/home/simon"
+PATH_HOME = Sys.getenv("HOME")
 PATH_ROIS200 = file.path(PATH_HOME, 'Drive', 'ADSD_200ROIS_N62')
 PATH_ROIS200_GSR = file.path(PATH_HOME, 'Drive', 'ADSD_200ROIS_GSR_N62')
 PATH_ROIS200_GSR_AR1 = file.path(PATH_HOME, 'Drive', 'ADSD_200ROIS_GSR_AR1_N62')
@@ -50,73 +53,114 @@ PATH_FIGS = file.path(PATH, 'figures')
 PATH_RES = file.path(PATH, 'results')
 ```
 
-## Subject infos
+## Read data sets
 ```{r Subjects infos}
-infos = read.table(file.path(PATH_RES, 'ADSD_info.txt'), header = T)
-# Excluded subjects
-infos$included = rep(TRUE,N)
-# DVARS; more than 20% volumes affected:
-infos$included[match("ADSD_13", infos$id)] = FALSE
-infos$included[match("ADSD_36", infos$id)] = FALSE
-# High E-vars: maybe include
-infos$included[match("ADSD_34", infos$id)] = FALSE
-# D-Var below 40% ie lots of autocorrelation due to physiology:
-infos$included[match("ADSD_15", infos$id)] = FALSE
-infos$included[match("ADSD_42", infos$id)] = FALSE
-infos$included[match("ADSD_43", infos$id)] = FALSE
+infos = read.spss(file.path(PATH_RES, 'demographic_variables.sav'), 
+                  to.data.frame = T)
 
-infos$included[match("2026", infos$id)] = FALSE # no mri data
+# add number of volumes in scan
+tmp = read.table(file.path(PATH_RES, 'vols.txt'), header = T)
+infos$N_vols = tmp$N_vols
+rm(tmp)
+# add site 
+infos$site = as.factor((infos$MRINR > 2000) + 1) # 1 stockholm; 2 shanghai
 
-infos$isHC = as.logical(infos$isHC)
-infos$isAD = as.logical(infos$isAD)
-infos$isSD = as.logical(infos$isSD)
+# conversions
+infos$preprocOK = as.logical(infos$preprocOK)
+infos$MRINR = as.factor(infos$MRINR)
+infos$id = infos$MRINR
+infos$group = infos$DIAGNOSIS
 
-infos$group=rep(NA, N)
-infos$group[infos$isSD] = 'SD'
-infos$group[infos$isAD] = 'AD'
-infos$group[infos$isHC] = 'HC'
-infos$group = as.factor(infos$group)
+# Excluded subjects:
+# DVARS, more than 20% volumes affected: 13 36
+# High E-vars: 34
+# D-Var below 40% ie lots of autocorrelation due to physiology: 15 42 43
+# Has no mri data: 2026
 
-assert(nrow(infos) == N)
-N_SD  = sum(infos$isSD & infos$included)
-N_AD  = sum(infos$isAD & infos$included)
-N_HC  = sum(infos$isHC & infos$included)
+# groups
+infos$isHC = infos$DIAGNOSIS == "HC"
+infos$isAD = infos$DIAGNOSIS == "AD"
+infos$isSD = infos$DIAGNOSIS == "SD"
 
 # DVARS
 dvars=read.table(file.path(PATH_RES, 'DVARS.txt'), header = T)
-assert(nrow(dvars) == nrow(infos))
 infos = cbind(infos, dvars)
 rm(dvars)
 
 print(infos)
 ```
 
-## Exclusions
+## Subejcts excludes
 ```{r}
-print(infos$id[!infos$included])
-summary(infos$group[!infos$included])
+print(as.character(infos$MRINR[!infos$preprocOK]))
+summary(infos$DIAGNOSIS[!infos$preprocOK])
 
 # percentage excluded
-sum(!infos$included)/N
+round(sum(!infos$preprocOK)/N*100, digits = 1)
 ```
 
-
-## Demographics
+## Table 1
 ```{r Demographics}
-d.demog = data.frame(Group=as.factor(c('SD', 'AD', 'HC')),
-                     N_Total=c(sum(infos$isSD), sum(infos$isAD), sum(infos$isHC)),
-                     N_included=c(sum(infos$isSD & infos$included),
-                                  sum(infos$isAD & infos$included),
-                                  sum(infos$isHC & infos$included)),
-                     age_mean=round(c(mean(infos$age[infos$isSD & infos$included]),
-                                 mean(infos$age[infos$isAD & infos$included]),
-                                 mean(infos$age[infos$isHC & infos$included]))),
-                     age_sd=round(c(sd(infos$age[infos$isSD & infos$included]),
-                                    sd(infos$age[infos$isAD & infos$included]),
-                                    sd(infos$age[infos$isHC & infos$included])))
-)
+# helper functions
+mean.sd <- function(x) sprintf("%.1f (%.1f)", mean(x, na.rm=T), sd(x, na.rm=T))
+odds <- function(x) sprintf("%d:%d", summary(x)[1], summary(x)[2])
+miss <- function(x) sprintf("%d", sum(!is.na(x)))
 
-print(d.demog)
+infos.fc = subset(infos, subset = infos$preprocOK)
+
+tab = data.frame(N = summary(infos.fc$DIAGNOSIS))
+tab$Age = tapply(infos.fc$AGE,infos.fc$DIAGNOSIS, mean.sd)
+tab$Gender = tapply(infos.fc$gender,infos.fc$DIAGNOSIS, odds)
+tab$Education = tapply(infos.fc$education,infos.fc$DIAGNOSIS, mean.sd)
+tab$CDS = tapply(infos.fc$CDS,infos.fc$DIAGNOSIS, mean.sd)
+tab$GDS = tapply(infos.fc$GDS,infos.fc$DIAGNOSIS, mean.sd)
+tab$MMSE = tapply(infos.fc$MMSE,infos.fc$DIAGNOSIS, mean.sd)
+tab$BNT = tapply(infos.fc$BNT/60*100,infos.fc$DIAGNOSIS, mean.sd)
+tab$`Oral picture naming` = tapply(infos.fc$oral_pn*100,infos.fc$DIAGNOSIS, mean.sd)
+tab$`Word-triple association` = tapply(infos.fc$wordtripassoc*100,infos.fc$DIAGNOSIS, mean.sd)
+tab$`Lexical decision` = tapply(infos.fc$lexdes_hits*100,infos.fc$DIAGNOSIS, mean.sd)
+tab$`AF` = tapply(infos.fc$AF,infos.fc$DIAGNOSIS, mean.sd)
+tab$`VF` = tapply(infos.fc$VF,infos.fc$DIAGNOSIS, mean.sd)
+
+# extend table
+tab = rbind(tab, 
+            c(paste(tapply(infos.fc$DIAGNOSIS, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$AGE, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$gender, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$education, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$CDS, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$GDS, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$MMSE, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$BNT, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$oral_pn, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$wordtripassoc, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$lexdes_hits, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$AF, infos.fc$DIAGNOSIS, miss), collapse = "/"),
+                   paste(tapply(infos.fc$VF, infos.fc$DIAGNOSIS, miss), collapse = "/")),
+            c(NA,
+              kruskal.test(infos.fc$AGE, infos.fc$DIAGNOSIS)$p.value,
+              NA,
+              kruskal.test(infos.fc$education, infos.fc$DIAGNOSIS)$p.value,
+              kruskal.test(infos.fc$CDS, infos.fc$DIAGNOSIS)$p.value,
+              kruskal.test(infos.fc$GDS, infos.fc$DIAGNOSIS)$p.value,
+              kruskal.test(infos.fc$MMSE, infos.fc$DIAGNOSIS)$p.value,
+              kruskal.test(infos.fc$BNT, infos.fc$DIAGNOSIS)$p.value,
+              NA, NA,
+              kruskal.test(infos.fc$lexdes_hits, infos.fc$DIAGNOSIS)$p.value,
+              kruskal.test(infos.fc$AF, infos.fc$DIAGNOSIS)$p.value,
+              kruskal.test(infos.fc$VF, infos.fc$DIAGNOSIS)$p.value
+              ))
+            
+rownames(tab)[4] = "No. of HC/AD/SD"
+rownames(tab)[5] = "p-value"
+
+tab = t(tab) 
+
+# formatting p-values
+tab[,'p-value'] = formatPval(as.numeric(tab[,'p-value']))
+tab = gsub("NaN \\(NA\\)|NA", "--", tab)
+
+kable(tab)
 ```
 
 ## DVARS analysis
@@ -136,10 +180,8 @@ summary(aov(SD_SDVARS_X2 ~ group, data=infos))
 summary(aov(g_Avar ~ group, data=infos))
 
 # DVARS after excluding subjects
-infos_ = subset(infos, included)
-
-summary(aov(SD_SDVARS_X2 ~ group, data=infos_))
-summary(aov(g_Avar ~ group, data=infos_))
+summary(aov(SD_SDVARS_X2 ~ group, data=infos.fc))
+summary(aov(g_Avar ~ group, data=infos.fc))
 ```
 ### Plot
 ```{r, fig.height=2, fig.width=4}
@@ -147,9 +189,9 @@ p1 = ggplot(infos, aes(x=group, y=Svar/Dvar)) + geom_boxplot() +
   coord_cartesian(ylim = c(0.5,2), expand = TRUE) +
   ggtitle(paste("N =", as.character(dim(infos)[1])))
 
-p2 = ggplot(infos_, aes(x=group,y=Svar/Dvar)) + geom_boxplot() + 
+p2 = ggplot(infos.fc, aes(x=group,y=Svar/Dvar)) + geom_boxplot() + 
   coord_cartesian(ylim = c(0.5,2), expand = TRUE) +
-  ggtitle(paste("N =", as.character(dim(infos_)[1])))
+  ggtitle(paste("N =", as.character(dim(infos.fc)[1])))
 
 plot_grid(p1, p2, ncol = 2, nrow = 1, rel_widths = c(1, 1))
 ```
@@ -163,7 +205,7 @@ p1 = ggplot(infos, aes(x=group, y=SD_SDVARS_X2)) + geom_boxplot() +
   geom_point(shape=1, color="gray70", size=2, position = position_jitter(width = 0.2, height = 0.01)) +
   ggtitle("before exclusion")
 
-p2 = ggplot(infos_, aes(x=group, y=SD_SDVARS_X2)) + geom_boxplot() +
+p2 = ggplot(infos.fc, aes(x=group, y=SD_SDVARS_X2)) + geom_boxplot() +
   coord_cartesian(ylim = c(0.8, 2)) +
   geom_point(shape=1, color="gray70", size=2, position = position_jitter(width = 0.2, height = 0.01)) + 
   ggtitle("after exclusion")
@@ -172,7 +214,7 @@ p3 = ggplot(infos, aes(x=group, y=g_Avar)) + geom_boxplot() +
   geom_point(shape=1, color="gray70", size=2, position = position_jitter(width = 0.2, height = 0.01)) +
   ggtitle("before exclusion")
 
-p4 = ggplot(infos_, aes(x=group, y=g_Avar)) + geom_boxplot() +
+p4 = ggplot(infos.fc, aes(x=group, y=g_Avar)) + geom_boxplot() +
   geom_point(shape=1, color="gray70", size=2, position = position_jitter(width = 0.2, height = 0.01)) + 
   ggtitle("after exclusion")
 
@@ -250,11 +292,6 @@ plot_grid(p1, p2, p3, p4, ncol = 2, nrow = 2, rel_widths = c(1, 1))
 load(file.path(PATH_RES, 'ADSD.RData'))
 ```
 
-Subjects excluded
-```{r}
-print(subset(infos, !infos$included))
-```
-
 ## Load ROIs of temporal regions
 ```{r Load ROIs}
 rois=as.matrix(read.table(file.path(PATH_RES, 'Cradd_tmp_labels.txt'), header = F))
@@ -276,32 +313,32 @@ infos$large.var = node.var > 1
 
 Subjects included with large node variance
 ```{r}
-print(subset(infos, infos$large.var & infos$included))
+print(subset(infos, infos$large.var & infos$preprocOK))
 ```
 
 ## Plot time series
 * First two subjects have lowest framewise displacement (01 and 2001)
 * Next 6 subjects have been excluded based on DVARS
-* Last 5 subejcts are "worst" subjects in terms of node variance that are included
+* Last 6 subejcts are "worst" subjects in terms of node variance that are included
 ```{r fig.height=20, fig.width=16}
 idx = 1:200 # interval to plot
 set.seed(1980)
 nodes = sample(rois, 5) # selection of nodes to plot
-#n = sample(which(infos$included), 10) # selection of subjects to plot
-n = c(1, 45, which(!infos$included), which(infos$large.var & infos$included))
+n = c(1, 45, which(!infos$preprocOK), which(infos$large.var & infos$preprocOK))
 
 p = list()
 
 for (s in 1:length(n)) {
   x = ts_[[n[s]]][,nodes]
-  offset = t(array(rep(seq(-4,4,2),nrow(x)), dim=c(5,nrow(x))))
-  p[[s]] = ggplot(melt(x+offset), aes(x = Var1, y = value, group=Var2, color=Var2)) + geom_line() + theme_minimal() +
+  offset = t(array(rep(seq(-4,4,2),nrow(x)), dim=c(5,nrow(x)))) # arrange ts on y-axis
+  p[[s]] = ggplot(melt(x+offset), aes(x = Var1, y = value, group=Var2, color=Var2)) +
+    geom_line() + theme_minimal() +
     ggtitle(sprintf('%s',infos$id[n[s]])) + ylim(c(-7, 7))
-  
   
   x = ts_gsr[[n[s]]][,nodes]
   offset = t(array(rep(seq(-4,4,2),nrow(x)), dim=c(5,nrow(x))))
-  p[[s+length(n)]] = ggplot(melt(x+offset), aes(x = Var1, y = value, group=Var2, color=Var2)) + geom_line() + theme_minimal() +
+  p[[s+length(n)]] = ggplot(melt(x+offset), aes(x = Var1, y = value, group=Var2, color=Var2)) +
+    geom_line() + theme_minimal() +
     ggtitle(sprintf('%s',infos$id[n[s]])) + ylim(c(-7, 7))
 }
 
@@ -310,7 +347,7 @@ a=1:(length(n)*2)
 x=c(t(matrix(t(a), length(n), 2)))
 
 plot_grid(plotlist = p[x], ncol = 2, nrow = 14, rel_widths = c(1, 1), 
-          labels = c("Without global signal regressionm (GRS)", "                            with GRS"))
+          labels = c("Without global signal regressionm (GRS)", "with GRS"))
 ```
 
 ## Compare distributions of Pearson's r
@@ -347,25 +384,6 @@ rownames(M) = c("SD", "AD", "HC")
 print(M)
 ```
 
-### Density plots
-```{r fig.height=5, fig.width=7, message=FALSE, warning=FALSE}
-# p1 = ggplot(Rd,     aes(x=R, fill=group)) + geom_histogram(alpha=0.3, position="identity", binwidth = 0.05) +
-#   ggtitle("raw") + coord_cartesian(ylim = c(0, 10^5)) 
-# p2 = ggplot(Rd_gsr, aes(x=R, fill=group)) + geom_histogram(alpha=0.3, position="identity", binwidth = 0.05) +
-#   ggtitle("GSR")
-# p3 = ggplot(Rd_ar1, aes(x=R, fill=group)) + geom_histogram(alpha=0.3, position="identity", binwidth = 0.05) +
-#   ggtitle("AR1")
-# p4 = ggplot(Rd_site, aes(x=R, fill=site)) + geom_histogram(alpha=0.3, position="identity", binwidth = 0.05) +
-#   ggtitle("AR1")
-
-p1 = ggplot(Rd,      aes(x=R, fill=group)) + geom_density(alpha=0.5) + ggtitle("raw")
-p2 = ggplot(Rd_gsr,  aes(x=R, fill=group)) + geom_density(alpha=0.5) + ggtitle("GSR")
-p3 = ggplot(Rd_ar1,  aes(x=R, fill=group)) + geom_density(alpha=0.5) + ggtitle("GSR + AR1")
-#p4 = ggplot(Rd_site, aes(x=R, fill=site))  + geom_density(alpha=0.3) + ggtitle("AR1")
-
-plot_grid(p1, p2, p3, ncol = 2, nrow = 2)
-```
-
 ## Fisher z-transformation
 ```{r}
 Z = 0.5*(log(1+R_gsr) - log(1-R_gsr))
@@ -391,9 +409,9 @@ for (i in 1:Nn) {
   for (j in 1:Nn) {
     if (i > j) {
       y = Z[rois[i], rois[j], ]
-      idx = infos$included
+      idx = infos$preprocOK
       # fit = aov(y[idx] ~ infos$group[idx]) # df=2/52
-      fit = aov(y[idx] ~ infos$group[idx] + infos$age[idx]) # df=2/52
+      fit = aov(y[idx] ~ infos$group[idx] + infos$AGE[idx]) # df=2/52
       # qqnorm(resid(fit))
       # qqline(resid(fit), col="red")
       result = summary(fit)
@@ -434,7 +452,6 @@ anova$perm.PvalsFDR = array(p.adjust(anova$perm.Pvals, method = "fdr"), dim=c(Nn
 idx = which(anova$groupPvalsFDR < 0.05, arr.ind = T)
 edges = array(rois[idx], dim=c(nrow(idx),2))
 print(edges)
-unique(sort(edges))
 ```
 
 ### Sorted 
@@ -443,7 +460,7 @@ unique(sort(edges))
 ```
 
 
-## Result Table
+## Table 2
 ```{r}
 roiLables = read.table(file.path(PATH_RES, 'Cradd_additional_labels.txt'), header = T)
 resultsTable = array(NA, dim=c(nrow(edges), 8))
@@ -457,7 +474,7 @@ colnames(resultsTable) = c("ROI", "ROI", "Region", "Region", "F-value", "adj. p-
 
 # order table based on significance
 ord = order(anova$groupFvals[idx], decreasing = T)
-print(resultsTable[ord,])
+kable(resultsTable[ord,])
 ```
 
 ## Post-hoc tests
@@ -465,24 +482,28 @@ print(resultsTable[ord,])
 table_posthoc = array(NA, dim=c(3, nrow(edges)))
 
 for (i in 1:nrow(edges)) {
-  y = Z[edges[i,][1], edges[i,][2], infos$included]
-  d = data.frame(Z=y, group=infos$group[infos$included])
+  y = Z[edges[i,][1], edges[i,][2], infos$preprocOK]
+  d = data.frame(Z=y, group=infos$group[infos$preprocOK])
   fit = aov(Z ~ group, data = d)
   res=TukeyHSD(fit)
   table_posthoc[,i] = res$group[,4]
 }
 colnames(table_posthoc) = 1:nrow(edges)
-rownames(table_posthoc) = c("HC-AD", "SD-AD", "SD-HC")
-print(round(table_posthoc, digits = 3))
-```set.see
+rownames(table_posthoc) = rownames(res$group)
+
+tab = array(formatPval(table_posthoc), dim = c(3,7))
+colnames(tab) = 1:nrow(edges)
+rownames(tab) = rownames(res$group)
+kable(tab)
+```
 
 Number of significant edges per group contrast
 ```{r}
 apply(table_posthoc < 0.05, 1, sum)
 ```
 
-## Plot Z scores
-```{r fig.height=4, fig.width=6.5, message=FALSE, warning=FALSE}
+## Figure 2
+```{r fig.height=4, fig.width=7, message=FALSE, warning=FALSE}
 set.seed(1980)
 p = list()
 line=data.frame(yintercept=0, cutoff=factor(0))
@@ -491,7 +512,7 @@ scaleFUN <- function(x) sprintf("%.1f", x)
 
 for (i in 1:nrow(edges)) {
   x = Z[edges[i,][1],edges[i,][2],]
-  d = data.frame(Z = x[infos$included], group=infos$group[infos$included])
+  d = data.frame(Z = x[infos$preprocOK], group=infos$group[infos$preprocOK])
   d$group = factor(d$group, c("SD", "AD", "HC"))
   p[[i]]= ggplot(d, aes(x=group, y=Z, color=group)) + geom_boxplot(width=0.7) +
     geom_point(shape=1, color="gray60", size=1.5, position = position_jitter(width = 0.2, height = 0)) + 
@@ -510,16 +531,16 @@ for (i in 1:nrow(edges)) {
   if (table_posthoc[1,i] < .05) {
     p[[i]] = p[[i]] + geom_segment(aes(x = 2, y = 1.6, xend = 3, yend = 1.6), col = "red", size = 0.3)
     }
-  if (table_posthoc[2,i] < .05) {
+  if (table_posthoc[3,i] < .05) {
     p[[i]] = p[[i]] + geom_segment(aes(x = 1, y = 1.5, xend = 2, yend = 1.5), col = "red", size = 0.3)
   } 
-  if (table_posthoc[3,i] < .05) {
+  if (table_posthoc[2,i] < .05) {
     p[[i]] = p[[i]] + geom_segment(aes(x = 1, y = 1.4, xend = 3, yend = 1.4), col = "red", size = 0.3)
   }
 }
 
 plot_grid(plotlist = p, ncol = 4, nrow = 2) #labels = c("1", "2", "3", "4", "5", "6", "7"))
-ggsave(path = PATH_FIGS, "Z-plot.png")
+ggsave(path = PATH_FIGS, "Figure2.png")
 ```
 
 
@@ -527,18 +548,18 @@ ggsave(path = PATH_FIGS, "Z-plot.png")
 ```{r}
 negPrc = array(NA, dim=c(1,3))
 
-Zn = array(NA, dim=c(sum(infos$included), nrow(edges)))
-Rn = array(NA, dim=c(sum(infos$included), nrow(edges)))
-Rn_gsr = array(NA, dim=c(sum(infos$included), nrow(edges)))
+Zn = array(NA, dim=c(sum(infos$preprocOK), nrow(edges)))
+Rn = array(NA, dim=c(sum(infos$preprocOK), nrow(edges)))
+Rn_gsr = array(NA, dim=c(sum(infos$preprocOK), nrow(edges)))
 for (i in 1:nrow(edges)) {
-  Zn[,i] = Z[edges[i,][1], edges[i,][2], infos$included]
-  Rn_gsr[,i] = R_gsr[edges[i,][1], edges[i,][2], infos$included]
-  Rn[,i] = R[edges[i,][1], edges[i,][2], infos$included]
+  Zn[,i] = Z[edges[i,][1], edges[i,][2], infos$preprocOK]
+  Rn_gsr[,i] = R_gsr[edges[i,][1], edges[i,][2], infos$preprocOK]
+  Rn[,i] = R[edges[i,][1], edges[i,][2], infos$preprocOK]
   }
 
-negPrc[1] = sum(Zn < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
-negPrc[2] = sum(Rn_gsr < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
-negPrc[3] = sum(Rn < 0, na.rm = T) / (sum(infos$included)*nrow(edges))
+negPrc[1] = sum(Zn < 0, na.rm = T) / (sum(infos$preprocOK)*nrow(edges))
+negPrc[2] = sum(Rn_gsr < 0, na.rm = T) / (sum(infos$preprocOK)*nrow(edges))
+negPrc[3] = sum(Rn < 0, na.rm = T) / (sum(infos$preprocOK)*nrow(edges))
 colnames(negPrc) = c("Z", "R with GSR", "R")
 print(negPrc)
 ```
@@ -552,13 +573,13 @@ mask = array(0, dim=c(N_ROIS, N_ROIS))
 mask[edges]=1
 
 # we do not use Z values for the chord diagram because these can be negative
-M_SD = apply(R_gsr[,,infos$isSD & infos$included], c(1,2), mean, na.rm=TRUE)
+M_SD = apply(R_gsr[,,infos$isSD & infos$preprocOK], c(1,2), mean, na.rm=TRUE)
 M_SD[!mask]=NA
 
-M_AD = apply(R_gsr[,,infos$isAD & infos$included], c(1,2), mean, na.rm=TRUE)
+M_AD = apply(R_gsr[,,infos$isAD & infos$preprocOK], c(1,2), mean, na.rm=TRUE)
 M_AD[!mask]=NA
 
-M_HC = apply(R_gsr[,,infos$isHC & infos$included], c(1,2), mean, na.rm=TRUE)
+M_HC = apply(R_gsr[,,infos$isHC & infos$preprocOK], c(1,2), mean, na.rm=TRUE)
 M_HC[!mask]=NA
 
 # insert row/column labels to 200x200 matrix and order array to separate left and right nodes
@@ -638,10 +659,10 @@ gap.after2 = c(rep(small.gap, bottom.gaps), big.gap2, rep(small.gap, top.gaps), 
 col_map = colorRamp2(c(-0.4, 0, 0.4), c("blue", "white", "red"), transparency = 0.3)
 ```
 
-### chord diagram
+### Figure 3
 ```{r fig.height=6, fig.width=6}
 # save figure
-png(filename=file.path(PATH_FIGS, 'network.png'), width=8, height=8, units = 'in', res=300)
+png(filename=file.path(PATH_FIGS, 'Figure3.png'), width=8, height=8, units = 'in', res=300)
 
 par(mfrow=c(2,2), "mar"=c(0, 0, 1, 0))
 # all 200 x 200 rois, then apply mask
@@ -698,7 +719,7 @@ title("Healthy elderly controls (HC)", cex.main=1.5, font.main=1)
 
 dev.off() 
 
-img <- readPNG(file.path(PATH_FIGS, "network.png"))
+img <- readPNG(file.path(PATH_FIGS, "Figure3.png"))
 grid.raster(img)
 ```
 Show in New WindowClear OutputExpand/Collapse Output
