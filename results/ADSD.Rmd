@@ -1,37 +1,32 @@
 ---
 title: "ADSD"
 author: "Simon Schwab"
-date: "09 Oct 2018"
+date: "15 May 2019"
 output: html_notebook
 ---
 
 ## Install packages
 ```{r Install packages}
 # install.packages("rmarkdown")
-# install.packages("testit")
 # install.packages("reshape2")
 # install.packages("ggplot2")
 # install.packages("cowplot")
-# install.packages("Hmisc")
 # install.packages("nortest")
-# install.packages("perm")
 # install.packages("lme4")
-# install.packages("moments")
+# install.packages("grid")
 # install.packages("circlize")
 # install.packages("png")
+# install.packages("biostatUZH", repos="http://R-Forge.R-project.org")
 ```
 
 ## Load libraries
-```{r Load libraries, message=FALSE, warning=TRUE}
-#library(testit)
+```{r Load libraries, message=FALSE, warning=FALSE}
 library(reshape2)
 library(ggplot2)
 library(cowplot)
-#library(Hmisc) # for rcor
 library(nortest)
 library(lme4)
-#library(moments)
-#library(perm)
+
 library(grid)
 library(circlize)
 library(png)
@@ -162,6 +157,18 @@ tab = gsub("NaN \\(NA\\)|NA", "--", tab)
 
 kable(tab)
 ```
+
+## MMSE and BNT analysis
+```{r}
+test = kruskal.test(MMSE ~ group, data=infos.fc)
+print(test)
+formatPval(test$p.value)
+
+test = kruskal.test(BNT ~ group, data=infos.fc)
+print(test)
+formatPval(test$p.value)
+```
+
 
 ## DVARS analysis
 ```{r}
@@ -320,7 +327,7 @@ print(subset(infos, infos$large.var & infos$preprocOK))
 * First two subjects have lowest framewise displacement (01 and 2001)
 * Next 6 subjects have been excluded based on DVARS
 * Last 6 subejcts are "worst" subjects in terms of node variance that are included
-```{r fig.height=20, fig.width=16}
+```{r eval=FALSE, fig.height=20, fig.width=16, include=FALSE}
 idx = 1:200 # interval to plot
 set.seed(1980)
 nodes = sample(rois, 5) # selection of nodes to plot
@@ -392,7 +399,7 @@ Z = 0.5*(log(1+R_gsr) - log(1-R_gsr))
 # Z = atanh(R_ar1)
 ```
 
-## Voxel-wise ANOVA
+## Node-wise ANOVA
 ```{r}
 set.seed(1980)
 anova=list()
@@ -410,7 +417,7 @@ for (i in 1:Nn) {
     if (i > j) {
       y = Z[rois[i], rois[j], ]
       idx = infos$preprocOK
-      # fit = aov(y[idx] ~ infos$group[idx]) # df=2/52
+      #fit = aov(y[idx] ~ infos$group[idx]) # df=2/52
       fit = aov(y[idx] ~ infos$group[idx] + infos$AGE[idx]) # df=2/52
       # qqnorm(resid(fit))
       # qqline(resid(fit), col="red")
@@ -468,7 +475,7 @@ resultsTable = array(NA, dim=c(nrow(edges), 8))
 resultsTable[,1:2] = edges
 resultsTable[,3:4] = array(roiLables$label[match(edges, roiLables$roinr)], dim=c(nrow(edges),2))
 resultsTable[,5] = round(anova$groupFvals[idx], digits = 2)
-resultsTable[,6] = round(anova$groupPvalsFDR[idx], digits = 4)
+resultsTable[,6] = formatPval(anova$groupPvalsFDR[idx])
 resultsTable[,7:8] = array(roiLables$abbrev2[match(edges, roiLables$roinr)], dim=c(nrow(edges),2))
 colnames(resultsTable) = c("ROI", "ROI", "Region", "Region", "F-value", "adj. p-value", "Abb.", "Abb.")
 
@@ -479,19 +486,20 @@ kable(resultsTable[ord,])
 
 ## Post-hoc tests
 ```{r}
-table_posthoc = array(NA, dim=c(3, nrow(edges)))
+hoc = array(NA, dim=c(3, nrow(edges)))
 
 for (i in 1:nrow(edges)) {
   y = Z[edges[i,][1], edges[i,][2], infos$preprocOK]
-  d = data.frame(Z=y, group=infos$group[infos$preprocOK])
+  d = data.frame(Z=y, group=infos$group[infos$preprocOK], age = infos$AGE[infos$preprocOK])
   fit = aov(Z ~ group, data = d)
-  res=TukeyHSD(fit)
-  table_posthoc[,i] = res$group[,4]
+  #fit = aov(Z ~ group + age, data = d) # the effect of age as covariate has been analyzed in the node-wise ANOVA
+  res=TukeyHSD(fit, "group")
+  hoc[,i] = res$group[,4]
 }
-colnames(table_posthoc) = 1:nrow(edges)
-rownames(table_posthoc) = rownames(res$group)
+colnames(hoc) = 1:nrow(edges)
+rownames(hoc) = rownames(res$group)
 
-tab = array(formatPval(table_posthoc), dim = c(3,7))
+tab = array(formatPval(hoc), dim = c(3,7))
 colnames(tab) = 1:nrow(edges)
 rownames(tab) = rownames(res$group)
 kable(tab)
@@ -499,7 +507,7 @@ kable(tab)
 
 Number of significant edges per group contrast
 ```{r}
-apply(table_posthoc < 0.05, 1, sum)
+apply(hoc < 0.05, 1, sum)
 ```
 
 ## Figure 2
@@ -521,20 +529,20 @@ for (i in 1:nrow(edges)) {
     scale_y_continuous(labels=scaleFUN) +
     theme(axis.text = element_text(size=10), plot.title = element_text(size=9, face = "plain"), 
           legend.position="none", axis.title.x=element_blank(),
-          panel.grid.major = element_line(size = 0.4, linetype = "dashed" , colour = "gray70")) + 
+          panel.grid.major = element_line(size = 0.4, linetype = "dotted" , colour = "gray70")) + 
     #ggtitle(sprintf('%d<->%d', edges[i,1], edges[i,2]))
     
     # display significances
     ggtitle(sprintf('edge no. %d\n %s \U2194 %s', i, resultsTable[i, 7], resultsTable[i, 8]))
     
    
-  if (table_posthoc[1,i] < .05) {
+  if (hoc[1,i] < .05) {
     p[[i]] = p[[i]] + geom_segment(aes(x = 2, y = 1.6, xend = 3, yend = 1.6), col = "red", size = 0.3)
     }
-  if (table_posthoc[3,i] < .05) {
+  if (hoc[3,i] < .05) {
     p[[i]] = p[[i]] + geom_segment(aes(x = 1, y = 1.5, xend = 2, yend = 1.5), col = "red", size = 0.3)
   } 
-  if (table_posthoc[2,i] < .05) {
+  if (hoc[2,i] < .05) {
     p[[i]] = p[[i]] + geom_segment(aes(x = 1, y = 1.4, xend = 3, yend = 1.4), col = "red", size = 0.3)
   }
 }
@@ -653,10 +661,10 @@ gap.after2 = c(rep(small.gap, bottom.gaps), big.gap2, rep(small.gap, top.gaps), 
 ```
 
 ### Create colormap
-```{r}
+```{r fig.height=1, fig.width=0.7}
 #set.seed(1980)
 # global colormaps
-col_map = colorRamp2(c(-0.4, 0, 0.4), c("blue", "white", "red"), transparency = 0.3)
+col_map = colorRamp2(c(-0.6, 0, 0.6), c("blue", "white", "red"), transparency = 0.1)
 ```
 
 ### Figure 3
@@ -668,8 +676,9 @@ par(mfrow=c(2,2), "mar"=c(0, 0, 1, 0))
 # all 200 x 200 rois, then apply mask
 
 set.seed(1980)
+gridCol = c(rep("yellow",7), rep("green",6))
 circos.par(gap.after = gap.after1, start.degree = -big.gap1/2-90)
-chordDiagram(M_SD_, directional = FALSE, transparency = 0.5,  annotationTrack = "grid",
+chordDiagram(M_SD_, directional = FALSE, transparency = 0.5,  annotationTrack = "grid", grid.col = gridCol,
              preAllocateTracks = 1, col = col_map, link.lwd = 0.5, link.lty = 1, link.border = "gray")
 circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
   xlim = get.cell.meta.data("xlim")
@@ -679,11 +688,11 @@ circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
               niceFacing = TRUE, col = "black", cex = 0.9)
 }, bg.border = NA)
 circos.clear()
-title("Semantic dementia (SD)", cex.main=1.5, font.main=1)
+title("Semantic dementia (SD)", cex.main=1.5, font.main=2)
 
 set.seed(1980)
 circos.par(gap.after = gap.after2, start.degree = -big.gap2/2-90)
-chordDiagram(M_AD_, directional = F, transparency = 0.5,  annotationTrack = "grid",
+chordDiagram(M_AD_, directional = F, transparency = 0.5,  annotationTrack = "grid", grid.col = gridCol,
              preAllocateTracks = 1, col = col_map, link.lwd = 0.5, link.lty = 1, link.border = "gray")
 circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
   xlim = get.cell.meta.data("xlim")
@@ -693,11 +702,11 @@ circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
               niceFacing = TRUE, col = "black", cex = 0.9)
 }, bg.border = NA)
 circos.clear()
-title("Alzheimer's disease (AD)", cex.main=1.5, font.main=1)
+title("Alzheimer's disease (AD)", cex.main=1.5, font.main=2)
 
 set.seed(1980)
 circos.par(gap.after = gap.after, start.degree = -big.gap/2-90)
-chordDiagram(M_HC_, directional = F, transparency = 0.5,  annotationTrack = "grid",
+chordDiagram(M_HC_, directional = F, transparency = 0.5,  annotationTrack = "grid", grid.col = gridCol,
              preAllocateTracks = 1, col = col_map, link.lwd = 0.5, link.lty = 1, link.border = "gray")
 circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
   xlim = get.cell.meta.data("xlim")
@@ -715,10 +724,19 @@ text(-0.55,-0.05,"5")
 text(-0.5,-0.2,"7")
 
 circos.clear()
-title("Healthy elderly controls (HC)", cex.main=1.5, font.main=1)
+title("Healthy elderly controls (HC)", cex.main=1.5, font.main=2)
+
+# colorbar
+my.colors = colorRampPalette(c("blue", "white", "red"))
+k=50
+z=matrix(1:k,nrow=1)
+x=1
+y=seq(-0.6,0.6,len=k) # supposing 3 and 2345 are the range of your data
+par(pin=c(0.1, 2))
+image(x,y,z,col=my.colors(k),axes=FALSE,xlab="",ylab="Connectivity strength\n(Pearson's r)", cex.axis=1, las=2)
+Axis(side=2, labels=TRUE, las=2)
 
 dev.off() 
-
 img <- readPNG(file.path(PATH_FIGS, "Figure3.png"))
 grid.raster(img)
 ```
