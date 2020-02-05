@@ -33,6 +33,8 @@ library(png)
 library(knitr)
 library(foreign)
 library(biostatUZH)
+library(testit)
+library(DGM)
 ```
 
 ## Main variables
@@ -43,7 +45,7 @@ PATH_HOME = Sys.getenv("HOME")
 PATH_ROIS200 = file.path(PATH_HOME, 'Drive', 'ADSD_200ROIS_N62')
 PATH_ROIS200_GSR = file.path(PATH_HOME, 'Drive', 'ADSD_200ROIS_GSR_N62')
 PATH_ROIS200_GSR_AR1 = file.path(PATH_HOME, 'Drive', 'ADSD_200ROIS_GSR_AR1_N62')
-PATH = file.path(PATH_HOME, 'Data', 'ADSD')
+PATH = file.path(PATH_HOME, 'Drive', 'ADSD')
 PATH_FIGS = file.path(PATH, 'figures')
 PATH_RES = file.path(PATH, 'results')
 ```
@@ -82,6 +84,13 @@ dvars=read.table(file.path(PATH_RES, 'DVARS.txt'), header = T)
 infos = cbind(infos, dvars)
 rm(dvars)
 
+# mean gm values from VBM CAT12
+vbm=read.table(file.path(PATH_RES, 'vbm.txt'), header = F, sep = ",")
+vbm = vbm[order(vbm$V1),]
+colnames(vbm)=c("id", "gm_all", "gm_temporal")
+assert(all(infos$MRINR==vbm$V1))
+infos = cbind(infos, vbm[,c(2,3)])
+
 print(infos)
 ```
 
@@ -110,10 +119,10 @@ tab$Education = tapply(infos.fc$education,infos.fc$DIAGNOSIS, mean.sd)
 tab$CDS = tapply(infos.fc$CDS,infos.fc$DIAGNOSIS, mean.sd)
 tab$GDS = tapply(infos.fc$GDS,infos.fc$DIAGNOSIS, mean.sd)
 tab$MMSE = tapply(infos.fc$MMSE,infos.fc$DIAGNOSIS, mean.sd)
-tab$BNT = tapply(infos.fc$BNT/60*100,infos.fc$DIAGNOSIS, mean.sd)
-tab$`Oral picture naming` = tapply(infos.fc$oral_pn*100,infos.fc$DIAGNOSIS, mean.sd)
-tab$`Word-triple association` = tapply(infos.fc$wordtripassoc*100,infos.fc$DIAGNOSIS, mean.sd)
-tab$`Lexical decision` = tapply(infos.fc$lexdes_hits*100,infos.fc$DIAGNOSIS, mean.sd)
+tab$BNT = tapply(infos.fc$BNT,infos.fc$DIAGNOSIS, mean.sd)
+tab$`Oral picture naming` = tapply(infos.fc$oral_pn*140,infos.fc$DIAGNOSIS, mean.sd)
+tab$`Word-triple association` = tapply(infos.fc$wordtripassoc*70,infos.fc$DIAGNOSIS, mean.sd)
+tab$`Lexical decision` = tapply(infos.fc$lexdes_hits*352,infos.fc$DIAGNOSIS, mean.sd)
 tab$`AF` = tapply(infos.fc$AF,infos.fc$DIAGNOSIS, mean.sd)
 tab$`VF` = tapply(infos.fc$VF,infos.fc$DIAGNOSIS, mean.sd)
 
@@ -405,11 +414,7 @@ set.seed(1980)
 anova=list()
 anova$groupFvals = array(NA, dim=c(Nn, Nn))
 anova$groupPvals = array(NA, dim=c(Nn, Nn))
-anova$ageFvals = array(NA, dim=c(Nn, Nn))
-anova$agePvals = array(NA, dim=c(Nn, Nn))
-
-anova$perm.Pvals = array(NA, dim=c(Nn, Nn))
-anova$perm.Stats = array(NA, dim=c(Nn, Nn))
+anova2 = anova
 
 for (i in 1:Nn) {
   #print(i)
@@ -417,21 +422,16 @@ for (i in 1:Nn) {
     if (i > j) {
       y = Z[rois[i], rois[j], ]
       idx = infos$preprocOK
-      #fit = aov(y[idx] ~ infos$group[idx]) # df=2/52
-      fit = aov(y[idx] ~ infos$group[idx] + infos$AGE[idx]) # df=2/52
-      # qqnorm(resid(fit))
-      # qqline(resid(fit), col="red")
+      fit = aov(y[idx] ~ infos$group[idx]) # df=2/53
+      fit2 = aov(y[idx] ~ infos$group[idx] + infos$AGE[idx] + infos$gm_temporal[idx] + infos$site[idx]) # df=2/50
+      
       result = summary(fit)
-
       anova$groupFvals[i,j] = result[[1]]$`F value`[1]
       anova$groupPvals[i,j] = result[[1]]$`Pr(>F)`[1]
-
-      anova$ageFvals[i,j] = result[[1]]$`F value`[2]
-      anova$ageFvals[i,j] = result[[1]]$`Pr(>F)`[2]
-
-      # result2 = permKS(y[idx] ~ infos$group[idx])
-      # anova$perm.Stats[i, j] = result2$statistic # df = 2
-      # anova$perm.Pvals[i, j] = result2$p.value
+      
+      result2 = summary(fit2)
+      anova2$groupFvals[i,j] = result2[[1]]$`F value`[1]
+      anova2$groupPvals[i,j] = result2[[1]]$`Pr(>F)`[1]
     }
   }
 }
@@ -443,28 +443,101 @@ save(anova, file = file.path(PATH_RES, 'anova.RData'))
 ```{r}
 load(file.path(PATH_RES, 'anova.RData'))
 
-x=array(NA, dim=c(1,2))
-x[1] = sum(anova$groupPvals < 0.05, na.rm = T)
+# adjust the p-values on the lower triangular
 anova$groupPvalsFDR = array(p.adjust(anova$groupPvals, method = "fdr"), dim=c(Nn, Nn))
-x[2] = sum(anova$groupPvalsFDR < 0.05, na.rm = T)
-colnames(x) = c("No. of sign. edges", "No. of sign. edges (FDR adjusted)")
-print(x)
+anova2$groupPvalsFDR = array(p.adjust(anova2$groupPvals, method = "fdr"), dim=c(Nn, Nn))
 
-anova$perm.PvalsFDR = array(p.adjust(anova$perm.Pvals, method = "fdr"), dim=c(Nn, Nn))
-# sum(anova$perm.PvalsFDR < 0.10, na.rm = T)
+# copy lower to upper triangular
+c = upper.tri(anova$groupPvals, diag = FALSE)
+anova$groupPvals[c]    = t(anova$groupPvals)[c]
+anova$groupFvals[c]    = t(anova$groupFvals)[c]
+anova$groupPvalsFDR[c] = t(anova$groupPvalsFDR)[c]
+
+anova2$groupPvals[c] = t(anova2$groupPvals)[c]
+anova2$groupFvals[c] = t(anova2$groupFvals)[c]
+anova2$groupPvalsFDR[c] = t(anova2$groupPvalsFDR)[c]
+
+tab.fdr=array(NA, dim=c(2,2))
+colnames(tab.fdr) = c("No. of sign. edges", "No. of sign. edges (FDR adjusted)")
+rownames(tab.fdr) = c("cov1", "cov2")
+
+tab.fdr[1,1] = sum(anova$groupPvals[c] < 0.05, na.rm = T)
+tab.fdr[2,1] = sum(anova2$groupPvals[c] < 0.05, na.rm = T)
+tab.fdr[1,2] = sum(anova$groupPvalsFDR[c] < 0.05, na.rm = T)
+tab.fdr[2,2] = sum(anova2$groupPvalsFDR[c] < 0.05, na.rm = T)
+
+print(tab.fdr)
 ```
 
 ## Significant edges (Craddock ROI number)
 ```{r}
-idx = which(anova$groupPvalsFDR < 0.05, arr.ind = T)
-edges = array(rois[idx], dim=c(nrow(idx),2))
-print(edges)
+c = upper.tri(anova$groupPvals, diag = FALSE)
+M=anova$groupPvalsFDR
+M[c] = NA
+edges_idx = which(M < 0.05, arr.ind = T)
+edges = array(rois[edges_idx], dim=c(nrow(edges_idx),2))
+
+M=anova2$groupPvalsFDR
+M[c] = NA
+edges2_idx = which(M < 0.05, arr.ind = T)
+edges2 = array(rois[edges2_idx], dim=c(nrow(edges2_idx),2))
+print(cbind(edges, edges2))
 ```
 
 ### Sorted 
 ```{r}
-unique(sort(edges))
+sig_edges = unique(sort(edges))
+sig_edges_idx = unique(sort(edges_idx))
+rbind(sig_edges, sig_edges_idx)
 ```
+
+## Plot connectivity matrix
+```{r fig.height=3.2, fig.width=10}
+R.sd = apply(R[rois, rois, infos$isSD], c(1,2), function (x) mean(x, na.rm=TRUE))
+R.ad = apply(R[rois, rois, infos$isAD], c(1,2), function (x) mean(x, na.rm=TRUE))
+R.hc = apply(R[rois, rois, infos$isHC], c(1,2), function (x) mean(x, na.rm=TRUE))
+
+# helper function for ploting correlation matrices
+gmat = function(M, hasLegend=NULL, pvals=NULL, lim = c(0,1)) {
+  c = lower.tri(M, diag = FALSE)
+  if (!is.null(pvals)) {
+    M[pvals >=0.05] = 0
+  }
+  p=ggplot(data = melt(M), aes(x=Var1, y=Var2, fill=value)) + geom_tile() + 
+    scale_fill_gradient2(
+      na.value = "transparent",
+      low  = "white",
+      mid  = "blue",
+      high = "red",
+      midpoint = 0.5,
+      limit = lim,
+      name = "r") +
+    theme(axis.ticks = element_blank(), axis.line = element_blank(), panel.background = element_blank(),
+          axis.title = element_blank()) + 
+    guides(fill=hasLegend)
+  return(p)
+} 
+
+mydist = dist(R.hc) # using HC group for clustering
+idx = hclust(mydist)$order
+p1=gmat(R.sd[idx,idx], hasLegend = FALSE) + ggtitle("SD")
+p2=gmat(R.ad[idx,idx], hasLegend = FALSE)+ ggtitle("AD")
+p3=gmat(R.hc[idx,idx]) + ggtitle("HC")
+
+# significant edges (corrected)
+M.sd=R.sd[sig_edges_idx,sig_edges_idx]
+M.ad=R.ad[sig_edges_idx,sig_edges_idx]
+M.hc=R.hc[sig_edges_idx,sig_edges_idx]
+mydist = dist(M.hc) # using HC group for clustering
+idx = hclust(mydist)$order
+p4=gmat(M.sd[idx,idx], hasLegend = FALSE)
+p5=gmat(M.ad[idx,idx], hasLegend = FALSE)
+p6=gmat(M.hc[idx,idx])
+
+plot_grid(p1,p2,p3, nrow = 1, ncol = 3, rel_widths = c(0.75,0.75,1))
+ggsave(path = PATH_FIGS, "Figure_corrmat.png")
+```
+
 
 
 ## Table 2
@@ -474,25 +547,43 @@ resultsTable = array(NA, dim=c(nrow(edges), 8))
 
 resultsTable[,1:2] = edges
 resultsTable[,3:4] = array(roiLables$label[match(edges, roiLables$roinr)], dim=c(nrow(edges),2))
-resultsTable[,5] = round(anova$groupFvals[idx], digits = 2)
-resultsTable[,6] = formatPval(anova$groupPvalsFDR[idx])
+
+resultsTable[,5] = round(anova$groupFvals[edges_idx], digits = 2)
+resultsTable[,6] = formatPval(anova$groupPvalsFDR[edges_idx])
 resultsTable[,7:8] = array(roiLables$abbrev2[match(edges, roiLables$roinr)], dim=c(nrow(edges),2))
 colnames(resultsTable) = c("ROI", "ROI", "Region", "Region", "F-value", "adj. p-value", "Abb.", "Abb.")
 
 # order table based on significance
-ord = order(anova$groupFvals[idx], decreasing = T)
-kable(resultsTable[ord,])
+ord = order(anova$groupFvals[edges_idx], decreasing = T)
+kable(resultsTable)
 ```
 
+
+## Supplementary Table
+```{r}
+roiLables = read.table(file.path(PATH_RES, 'Cradd_additional_labels.txt'), header = T)
+resultsTable = array(NA, dim=c(nrow(edges2), 8))
+
+resultsTable[,1:2] = edges2
+resultsTable[,3:4] = array(roiLables$label[match(edges2, roiLables$roinr)], dim=c(nrow(edges2),2))
+
+resultsTable[,5] = round(anova2$groupFvals[edges_idx], digits = 2)
+resultsTable[,6] = formatPval(anova2$groupPvalsFDR[edges_idx])
+resultsTable[,7:8] = array(roiLables$abbrev2[match(edges2, roiLables$roinr)], dim=c(nrow(edges2),2))
+colnames(resultsTable) = c("ROI", "ROI", "Region", "Region", "F-value", "adj. p-value", "Abb.", "Abb.")
+
+# order table based on significance
+kable(resultsTable)
+```
 ## Post-hoc tests
 ```{r}
 hoc = array(NA, dim=c(3, nrow(edges)))
 
 for (i in 1:nrow(edges)) {
   y = Z[edges[i,][1], edges[i,][2], infos$preprocOK]
-  d = data.frame(Z=y, group=infos$group[infos$preprocOK], age = infos$AGE[infos$preprocOK])
-  fit = aov(Z ~ group, data = d)
-  #fit = aov(Z ~ group + age, data = d) # the effect of age as covariate has been analyzed in the node-wise ANOVA
+  d = data.frame(Z=y, group=infos$group[infos$preprocOK], age = infos$AGE[infos$preprocOK], gm = infos$gm_temporal[infos$preprocOK], 
+                 site = infos$site[infos$preprocOK])
+  fit = aov(Z ~ group, data = d) # the effect of age as covariate has been analyzed in the node-wise ANOVA
   res=TukeyHSD(fit, "group")
   hoc[,i] = res$group[,4]
 }
@@ -501,6 +592,32 @@ rownames(hoc) = rownames(res$group)
 
 tab = array(formatPval(hoc), dim = c(3,7))
 colnames(tab) = 1:nrow(edges)
+rownames(tab) = rownames(res$group)
+kable(tab)
+```
+
+Number of significant edges per group contrast
+```{r}
+apply(hoc < 0.05, 1, sum)
+```
+
+## Sensitivity analysis Post-hoc tests
+```{r , warning=FALSE}
+hoc = array(NA, dim=c(3, nrow(edges2)))
+
+for (i in 1:nrow(edges2)) {
+  y = Z[edges2[i,][1], edges2[i,][2], infos$preprocOK]
+  d = data.frame(Z=y, group=infos$group[infos$preprocOK], age = infos$AGE[infos$preprocOK], gm = infos$gm_temporal[infos$preprocOK], 
+                 site = infos$site[infos$preprocOK])
+  fit = aov(Z ~ group + age + gm + site, data = d) # the effect of age as covariate has been analyzed in the node-wise ANOVA
+  res=TukeyHSD(fit, "group")
+  hoc[,i] = res$group[,4]
+}
+colnames(hoc) = 1:nrow(edges2)
+rownames(hoc) = rownames(res$group)
+
+tab = array(formatPval(hoc), dim = c(3,7))
+colnames(tab) = 1:nrow(edges2)
 rownames(tab) = rownames(res$group)
 kable(tab)
 ```
@@ -762,3 +879,11 @@ colnames(m) = 1:4
 
 chordDiagram(m, directional = TRUE, transparency = 0.5)
 ```
+
+# VBM analysis
+```{r fig.height=3, fig.width=3.5}
+ggplot(infos, aes(x=gm_all, y=gm_temporal, group=group, col=group)) + 
+  geom_point() + ylab("atrophy (general)") + xlab("atrophy (temporal)")
+```
+
+
